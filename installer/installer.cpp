@@ -25,8 +25,8 @@
 #define ifstream std::ifstream
 #endif // UNICODE
 
-const TCHAR LSP_ENTRYID[] = _T("LSP-CatalogEntryId");
-const unsigned int LSP_ENTRYID_LEN = 32;
+#define LSP_ENTRYID _T("LSP-CatalogEntryId")
+#define LSP_ENTRYID_LEN 32
 
 bool _AddEnv(const TCHAR* key, const TCHAR* value)
 {

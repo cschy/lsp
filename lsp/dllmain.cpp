@@ -24,6 +24,7 @@
 #endif // UNICODE
 #define MAX_PROC_COUNT 16
 #define MAX_PROC_NAME 16
+#define CONFIG_FILE _T("lsp.config")
 
 TCHAR	g_szDllPath[MAX_PATH];	// 当前DLL路径
 TCHAR	g_szCurrentApp[MAX_PATH];	// 当前调用本DLL的程序的名称
@@ -181,17 +182,12 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	ZeroMemory(g_szCurrentApp, sizeof(g_szCurrentApp));
 	GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
 	PathStripPath(g_szCurrentApp);
-	for (int i = 0; i < MAX_PATH; i++) {
-		if (g_szCurrentApp[i] == _T('.')) {
-			g_szCurrentApp[i] = _T('\0');
-			break;
-		}
-	}
+	PathRemoveExtension(g_szCurrentApp);
 	PrintDebugString(_T("Success: %s.%s"), g_szCurrentApp, __FUNC__);
 	
 	// 从文件加载需要拦截的应用程序
 	PathRemoveFileSpec(g_szDllPath);
-	PathAppend(g_szDllPath, _T("lsp.config"));
+	PathAppend(g_szDllPath, CONFIG_FILE);
 	PrintDebugString(_T("Success: cfgFilePath: %s"), g_szDllPath);
 	ifstream ifs(g_szDllPath);
 	ZeroMemory(g_szHookProc, sizeof(g_szHookProc));
