@@ -1,14 +1,16 @@
 ﻿// installer.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
 //
-#include <afxwin.h>
+//#include <afxwin.h>
 #include <iostream>
 #include <Ws2spi.h>
 #include <tchar.h>
 #include <SpOrder.h>
 #include <string>
-#include <ShlObj.h>
-#include <io.h>
 #include <vector>
+#include <ShlObj.h>
+#include <Shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
+
 
 #pragma comment(lib, "ws2_32.lib")  //加载 ws2_32.dll
 
@@ -323,22 +325,22 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
     return true;
 }
 
-void GetPathExceptSelf(std::vector<tstring>& v)
-{
-    TCHAR szSelfPath[MAX_PATH];
-    GetModuleFileName(NULL, szSelfPath, MAX_PATH);
-
-    CFileFind finder;
-    BOOL bWorking = finder.FindFile(_T("*.*"));
-    while (bWorking)
-    {
-        bWorking = finder.FindNextFile();
-        if (finder.IsDots() || finder.IsDirectory() || finder.GetFilePath() == CString(szSelfPath)) {
-            continue;
-        }
-        v.emplace_back(finder.GetFilePath());
-    }
-}
+//void GetPathExceptSelf(std::vector<tstring>& v)
+//{
+//    TCHAR szSelfPath[MAX_PATH];
+//    GetModuleFileName(NULL, szSelfPath, MAX_PATH);
+//
+//    CFileFind finder;
+//    BOOL bWorking = finder.FindFile(_T("*.*"));
+//    while (bWorking)
+//    {
+//        bWorking = finder.FindNextFile();
+//        if (finder.IsDots() || finder.IsDirectory() || finder.GetFilePath() == CString(szSelfPath)) {
+//            continue;
+//        }
+//        v.emplace_back(finder.GetFilePath());
+//    }
+//}
 
 bool GetUserSelectDir(tstring& res)
 {
@@ -423,7 +425,10 @@ int _tmain(int argc, TCHAR* argv[])
     const TCHAR szSelectDir[] = _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp");
     _tprintf_s(_T("第二步：拷贝dll及其资源到安全目录：%s\n"), szSelectDir);
     if (!PathIsDirectory(szSelectDir)) {
-        CreateDirectory(szSelectDir, NULL);
+        if (!CreateDirectory(szSelectDir, NULL) && GetLastError() == ERROR_PATH_NOT_FOUND) {
+            MessageBox(NULL, _T("非统一客户端用户禁止使用"), _T("错误"), MB_ICONWARNING);
+            return 0;
+        }
     }
 
     TCHAR srcDllFile[MAX_PATH], srcCfgFile[MAX_PATH];
@@ -470,8 +475,22 @@ int _tmain(int argc, TCHAR* argv[])
     
 
     _tprintf_s(_T("第三步：安装dll：%s\n"), dstDllFile);
-    InstallProvider(dstDllFile) ? MessageBox(NULL, _T("安装分层协议及其协议链成功，请重启需要联网的通讯软件"), _T("提示"), MB_ICONINFORMATION)
-        : MessageBox(NULL, _T("安装分层协议及其协议链失败"), _T("错误"), MB_ICONWARNING);
+    if (InstallProvider(dstDllFile)) {
+        //开启sender进程
+        TCHAR szSenderProc[] = _T("sender.exe");
+        STARTUPINFO si = { 0 };
+        PROCESS_INFORMATION pi = { 0 };
+        /*ZeroMemory(&si, sizeof(STARTUPINFO));
+        ZeroMemory(&pi, sizeof(PROCESS_INFORMATION));*/
+        si.cb = sizeof(STARTUPINFO);
+        si.wShowWindow = SW_HIDE;
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        CreateProcess(NULL, szSenderProc, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+        MessageBox(NULL, _T("安装分层协议及其协议链成功，请重启需要联网的通讯软件"), _T("提示"), MB_ICONINFORMATION);
+    }
+    else {
+        MessageBox(NULL, _T("安装分层协议及其协议链失败"), _T("错误"), MB_ICONWARNING);
+    }
 
     return 0;
 }

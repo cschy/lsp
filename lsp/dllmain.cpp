@@ -10,6 +10,7 @@
 #include <Shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
 
+
 //自定义宏
 #ifdef UNICODE
 #define __FUNC__ __FUNCTIONW__
@@ -25,12 +26,41 @@
 #define MAX_PROC_COUNT 16
 #define MAX_PROC_NAME 16
 #define CONFIG_FILE _T("lsp.config")
+#define IP "127.0.0.1"
+#define PORT 32188
+#define URL "/userLogin"
+#define POST_DATA "NetworkStatus=1\
+&intranet=136.6.164.17\
+&intraport=18080\
+&extranet=183.71.237.22\
+&extraport=8087"
 
 TCHAR	g_szDllPath[MAX_PATH];	// 当前DLL路径
 TCHAR	g_szCurrentApp[MAX_PATH];	// 当前调用本DLL的程序的名称
 WSPPROC_TABLE g_NextProcTable;		// 下层函数列表
 TCHAR g_szHookProc[MAX_PROC_COUNT][MAX_PROC_NAME] = { 0 };
 unsigned int iCurrentProcNum;
+SOCKET sock = INVALID_SOCKET;
+HWND hSenderWnd;
+bool initSender = false;
+
+bool _GetEnv(const TCHAR* key, TCHAR* value, DWORD nSize)
+{
+	HKEY hKey;
+	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, _T("Environment"), 0, KEY_READ, &hKey))
+	{
+		DWORD size = sizeof(TCHAR) * nSize;
+		if (ERROR_SUCCESS == RegQueryValueEx(hKey, key, NULL, NULL, (LPBYTE)value, &size))
+		{
+			RegCloseKey(hKey);
+			return true;
+		}
+		_tprintf_s(_T("%s.RegQueryValueEx(%s): %d\n"), __FUNC__, key, GetLastError());
+		RegCloseKey(hKey);
+	}
+	_tprintf_s(_T("%s.RegOpenKeyEx: %d\n"), __FUNC__, GetLastError());//如何将每个api与它的描述字符对应起来
+	return false;
+}
 
 void PrintDebugString(LPCTSTR lpszFmt, ...)
 {
@@ -110,14 +140,22 @@ int WSPAPI WSPConnect(
 		{
 			if (namelen == sizeof(sockaddr_in)) {
 				sockaddr_in* addr = (sockaddr_in*)name;
-				TCHAR cAddr[17] = { 0 };
-				InetNtop(AF_INET, &addr->sin_addr, cAddr, 17);
+				TCHAR cAddr[16] = { 0 };
+				InetNtop(AF_INET, &addr->sin_addr, cAddr, 16);
+				COPYDATASTRUCT copyData;
+				copyData.lpData = &addr->sin_addr;
+				copyData.cbData = sizeof(addr->sin_addr);
+				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
 				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 			}
 			else if (namelen == sizeof(sockaddr_in6)) {
 				sockaddr_in6* addr = (sockaddr_in6*)name;
-				TCHAR cAddr[47] = { 0 };
-				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 47);
+				TCHAR cAddr[46] = { 0 };
+				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 46);
+				COPYDATASTRUCT copyData;
+				copyData.lpData = &addr->sin6_addr;
+				copyData.cbData = sizeof(addr->sin6_addr);
+				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
 				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 			}
 
@@ -127,6 +165,21 @@ int WSPAPI WSPConnect(
 
 	return g_NextProcTable.lpWSPConnect(s, name, namelen, lpCallerData, lpCalleeData, lpSQOS, lpGQOS, lpErrno);
 }
+
+//int WSPAPI WSPSend(
+//	SOCKET s,
+//	LPWSABUF lpBuffers,
+//	DWORD dwBufferCount,
+//	LPDWORD lpNumberOfBytesSent,
+//	DWORD dwFlags,
+//	LPWSAOVERLAPPED lpOverlapped,
+//	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine,
+//	LPWSATHREADID lpThreadId,
+//	LPINT lpErrno
+//)
+//{
+//	return g_NextProcTable.lpWSPSend();
+//}
 
 int WSPAPI WSPSendTo(
 	SOCKET s,
@@ -148,14 +201,61 @@ int WSPAPI WSPSendTo(
 		{
 			if (iTolen == sizeof(sockaddr_in)) {
 				sockaddr_in* addr = (sockaddr_in*)lpTo;
-				TCHAR cAddr[17] = { 0 };
-				InetNtop(AF_INET, &addr->sin_addr, cAddr, 17);
+				TCHAR cAddr[16] = { 0 };
+				InetNtop(AF_INET, &addr->sin_addr, cAddr, 16);
+				COPYDATASTRUCT copyData;
+				copyData.lpData = &addr->sin_addr;
+				copyData.cbData = sizeof(addr->sin_addr);
+				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
+				//SendMsg(oneclick);
+				//if (sock == INVALID_SOCKET) {
+				//	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+				//	PrintDebugString(_T("Success: create socket:%d"), sock);
+				//	struct sockaddr_in sockAddr = { 0 };
+				//	sockAddr.sin_family = AF_INET;
+				//	IN_ADDR addr;
+				//	inet_pton(AF_INET, IP, &addr);
+				//	sockAddr.sin_addr.s_addr = addr.s_addr;
+				//	sockAddr.sin_port = htons(PORT);
+				//	PrintDebugString(_T("Success: connect本地ip之前: %d"), sock);
+				//	connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
+				//	PrintDebugString(_T("Success: connect本地ip: %d"), sock);
+				//	std::stringstream stream;
+				//	stream << "POST " << URL;
+				//	stream << " HTTP/1.1\r\n";
+				//	stream << "Host: " << IP << ":" << PORT << "\r\n";
+				//	stream << "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.124 Safari/537.36 Edg/102.0.1245.41\r\n";
+				//	stream << "Content-Type:application/x-www-form-urlencoded\r\n";
+				//	//stream << "Content-Length:" << post_content.length() << "\r\n";
+				//	stream << "Connection:keep-alive\r\n\r\n";
+				//	stream << POST_DATA;
+				//	
+				//	PrintDebugString(_T("Success: send to 统一客户端:%d, sock:%d"), send(sock, stream.str().c_str(), sizeof(char) * (stream.str().length()), 0), sock);
+				//	PrintDebugString(_T("Success: lasterror:%d, sock:%d"), WSAGetLastError(), sock);
+				//
+				//}
 				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 			}
 			else if (iTolen == sizeof(sockaddr_in6)) {
 				sockaddr_in6* addr = (sockaddr_in6*)lpTo;
-				TCHAR cAddr[47] = { 0 };
-				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 47);
+				TCHAR cAddr[46] = { 0 };
+				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 46);
+				COPYDATASTRUCT copyData;
+				copyData.lpData = &addr->sin6_addr;
+				copyData.cbData = sizeof(addr->sin6_addr);
+				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
+				//if (sock != INVALID_SOCKET) {
+				//	std::stringstream stream;
+				//	stream << "POST " << URL;
+				//	stream << " HTTP/1.1\r\n";
+				//	stream << "Host: " << IP << ":" << PORT << "\r\n";
+				//	stream << "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.124 Safari/537.36 Edg/102.0.1245.41\r\n";
+				//	stream << "Content-Type:application/x-www-form-urlencoded\r\n";
+				//	//stream << "Content-Length:" << post_content.length() << "\r\n";
+				//	stream << "Connection:keep-alive\r\n\r\n";
+				//	stream << POST_DATA;
+				//	send(sock, stream.str().c_str(), sizeof(char)*(stream.str().length()), 0);
+				//}
 				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 			}
 
@@ -174,33 +274,47 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	_In_ WSPUPCALLTABLE UpcallTable,
 	_Out_ LPWSPPROC_TABLE lpProcTable
 )
-{
+{	
 	if (lpProtocolInfo->ProtocolChain.ChainLen <= 1)
 	{
 		return WSAEPROVIDERFAILEDINIT;
 	}
-	ZeroMemory(g_szCurrentApp, sizeof(g_szCurrentApp));
-	GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
-	PathStripPath(g_szCurrentApp);
-	PathRemoveExtension(g_szCurrentApp);
-	PrintDebugString(_T("Success: %s.%s"), g_szCurrentApp, __FUNC__);
-	
-	// 从文件加载需要拦截的应用程序
-	PathRemoveFileSpec(g_szDllPath);
-	PathAppend(g_szDllPath, CONFIG_FILE);
-	PrintDebugString(_T("Success: cfgFilePath: %s"), g_szDllPath);
-	ifstream ifs(g_szDllPath);
-	ZeroMemory(g_szHookProc, sizeof(g_szHookProc));
-	int i = 0;
-	while (ifs.getline(g_szHookProc[i], MAX_PROC_NAME)) {
-		PrintDebugString(_T("Success: 拦截进程：%s"), g_szHookProc[i]);
-		i++;
-		if (i >= MAX_PROC_COUNT) {
-			break;
+
+	if (!initSender)
+	{
+		initSender = true;
+
+		// 从注册表获取sender窗口句柄
+#define KEY_SENDER_HWND _T("hwnd@sender")
+		TCHAR szSenderHwnd[16] = { 0 };
+		_GetEnv(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
+		_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
+		PrintDebugString(_T("Success: 得到sender的窗口句柄：%x"), hSenderWnd);
+
+		// 获取本进程名
+		ZeroMemory(g_szCurrentApp, sizeof(g_szCurrentApp));
+		GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
+		PathStripPath(g_szCurrentApp);
+		PathRemoveExtension(g_szCurrentApp);
+		PrintDebugString(_T("Success: %s.%s"), g_szCurrentApp, __FUNC__);
+
+		// 从文件加载需要拦截的应用程序
+		PathRemoveFileSpec(g_szDllPath);
+		PathAppend(g_szDllPath, CONFIG_FILE);
+		PrintDebugString(_T("Success: cfgFilePath: %s"), g_szDllPath);
+		ifstream ifs(g_szDllPath);
+		ZeroMemory(g_szHookProc, sizeof(g_szHookProc));
+		int i = 0;
+		while (ifs.getline(g_szHookProc[i], MAX_PROC_NAME)) {
+			PrintDebugString(_T("Success: 拦截进程：%s"), g_szHookProc[i]);
+			i++;
+			if (i >= MAX_PROC_COUNT) {
+				break;
+			}
 		}
+		iCurrentProcNum = i;
+		ifs.close();
 	}
-	iCurrentProcNum = i;
-	ifs.close();
 
 	// 枚举协议，找到下层协议的WSAPROTOCOL_INFOW结构
 	WSAPROTOCOL_INFOW NextProtocolInfo;
