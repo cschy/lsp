@@ -16,15 +16,15 @@
 
 //自定义宏
 #ifdef UNICODE
-#define __FUNC__ __FUNCTIONW__
-#define tstring std::wstring
-#define to_tstring std::to_wstring
-#define ifstream std::wifstream
+    #define __FUNC__ __FUNCTIONW__
+    #define tstring std::wstring
+    #define to_tstring std::to_wstring
+    #define ifstream std::wifstream
 #else
-#define __FUNC__ __FUNCTION__
-#define tstring std::string
-#define to_tstring std::to_string
-#define ifstream std::ifstream
+    #define __FUNC__ __FUNCTION__
+    #define tstring std::string
+    #define to_tstring std::to_string
+    #define ifstream std::ifstream
 #endif // UNICODE
 
 #define LSP_ENTRYID _T("LSP-CatalogEntryId")
@@ -480,8 +480,6 @@ int _tmain(int argc, TCHAR* argv[])
         TCHAR szSenderProc[] = _T("sender.exe");
         STARTUPINFO si = { 0 };
         PROCESS_INFORMATION pi = { 0 };
-        /*ZeroMemory(&si, sizeof(STARTUPINFO));
-        ZeroMemory(&pi, sizeof(PROCESS_INFORMATION));*/
         si.cb = sizeof(STARTUPINFO);
         si.wShowWindow = SW_HIDE;
         si.dwFlags = STARTF_USESHOWWINDOW;

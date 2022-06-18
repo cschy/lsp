@@ -13,34 +13,27 @@
 
 //自定义宏
 #ifdef UNICODE
-#define __FUNC__ __FUNCTIONW__
-#define tstring std::wstring
-#define to_tstring std::to_wstring
-#define ifstream std::wifstream
+	#define __FUNC__ __FUNCTIONW__
+	#define tstring std::wstring
+	#define to_tstring std::to_wstring
+	#define ifstream std::wifstream
 #else
-#define __FUNC__ __FUNCTION__
-#define tstring std::string
-#define to_tstring std::to_string
-#define ifstream std::ifstream
+	#define __FUNC__ __FUNCTION__
+	#define tstring std::string
+	#define to_tstring std::to_string
+	#define ifstream std::ifstream
 #endif // UNICODE
+
 #define MAX_PROC_COUNT 16
 #define MAX_PROC_NAME 16
 #define CONFIG_FILE _T("lsp.config")
-#define IP "127.0.0.1"
-#define PORT 32188
-#define URL "/userLogin"
-#define POST_DATA "NetworkStatus=1\
-&intranet=136.6.164.17\
-&intraport=18080\
-&extranet=183.71.237.22\
-&extraport=8087"
 
-TCHAR	g_szDllPath[MAX_PATH];	// 当前DLL路径
+
+TCHAR	g_szDllPath[MAX_PATH];		// 当前DLL路径
 TCHAR	g_szCurrentApp[MAX_PATH];	// 当前调用本DLL的程序的名称
 WSPPROC_TABLE g_NextProcTable;		// 下层函数列表
 TCHAR g_szHookProc[MAX_PROC_COUNT][MAX_PROC_NAME] = { 0 };
 unsigned int iCurrentProcNum;
-SOCKET sock = INVALID_SOCKET;
 HWND hSenderWnd;
 bool initSender = false;
 
@@ -166,21 +159,6 @@ int WSPAPI WSPConnect(
 	return g_NextProcTable.lpWSPConnect(s, name, namelen, lpCallerData, lpCalleeData, lpSQOS, lpGQOS, lpErrno);
 }
 
-//int WSPAPI WSPSend(
-//	SOCKET s,
-//	LPWSABUF lpBuffers,
-//	DWORD dwBufferCount,
-//	LPDWORD lpNumberOfBytesSent,
-//	DWORD dwFlags,
-//	LPWSAOVERLAPPED lpOverlapped,
-//	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine,
-//	LPWSATHREADID lpThreadId,
-//	LPINT lpErrno
-//)
-//{
-//	return g_NextProcTable.lpWSPSend();
-//}
-
 int WSPAPI WSPSendTo(
 	SOCKET s,
 	LPWSABUF lpBuffers,
@@ -207,33 +185,6 @@ int WSPAPI WSPSendTo(
 				copyData.lpData = &addr->sin_addr;
 				copyData.cbData = sizeof(addr->sin_addr);
 				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
-				//SendMsg(oneclick);
-				//if (sock == INVALID_SOCKET) {
-				//	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-				//	PrintDebugString(_T("Success: create socket:%d"), sock);
-				//	struct sockaddr_in sockAddr = { 0 };
-				//	sockAddr.sin_family = AF_INET;
-				//	IN_ADDR addr;
-				//	inet_pton(AF_INET, IP, &addr);
-				//	sockAddr.sin_addr.s_addr = addr.s_addr;
-				//	sockAddr.sin_port = htons(PORT);
-				//	PrintDebugString(_T("Success: connect本地ip之前: %d"), sock);
-				//	connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
-				//	PrintDebugString(_T("Success: connect本地ip: %d"), sock);
-				//	std::stringstream stream;
-				//	stream << "POST " << URL;
-				//	stream << " HTTP/1.1\r\n";
-				//	stream << "Host: " << IP << ":" << PORT << "\r\n";
-				//	stream << "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.124 Safari/537.36 Edg/102.0.1245.41\r\n";
-				//	stream << "Content-Type:application/x-www-form-urlencoded\r\n";
-				//	//stream << "Content-Length:" << post_content.length() << "\r\n";
-				//	stream << "Connection:keep-alive\r\n\r\n";
-				//	stream << POST_DATA;
-				//	
-				//	PrintDebugString(_T("Success: send to 统一客户端:%d, sock:%d"), send(sock, stream.str().c_str(), sizeof(char) * (stream.str().length()), 0), sock);
-				//	PrintDebugString(_T("Success: lasterror:%d, sock:%d"), WSAGetLastError(), sock);
-				//
-				//}
 				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 			}
 			else if (iTolen == sizeof(sockaddr_in6)) {
@@ -244,18 +195,6 @@ int WSPAPI WSPSendTo(
 				copyData.lpData = &addr->sin6_addr;
 				copyData.cbData = sizeof(addr->sin6_addr);
 				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
-				//if (sock != INVALID_SOCKET) {
-				//	std::stringstream stream;
-				//	stream << "POST " << URL;
-				//	stream << " HTTP/1.1\r\n";
-				//	stream << "Host: " << IP << ":" << PORT << "\r\n";
-				//	stream << "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.124 Safari/537.36 Edg/102.0.1245.41\r\n";
-				//	stream << "Content-Type:application/x-www-form-urlencoded\r\n";
-				//	//stream << "Content-Length:" << post_content.length() << "\r\n";
-				//	stream << "Connection:keep-alive\r\n\r\n";
-				//	stream << POST_DATA;
-				//	send(sock, stream.str().c_str(), sizeof(char)*(stream.str().length()), 0);
-				//}
 				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 			}
 
