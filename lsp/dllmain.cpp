@@ -27,15 +27,19 @@
 #define MAX_PROC_COUNT 16
 #define MAX_PROC_NAME 16
 #define CONFIG_FILE _T("lsp.config")
+#define SENDER_FILE _T("sender.exe")
 
+TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
+WSPPROC_TABLE g_NextProcTable;				//下层函数列表
 
-TCHAR	g_szDllPath[MAX_PATH];		// 当前DLL路径
-TCHAR	g_szCurrentApp[MAX_PATH];	// 当前调用本DLL的程序的名称
-WSPPROC_TABLE g_NextProcTable;		// 下层函数列表
+#pragma data_seg (".shared")
 TCHAR g_szHookProc[MAX_PROC_COUNT][MAX_PROC_NAME] = { 0 };
-unsigned int iCurrentProcNum;
-HWND hSenderWnd;
-bool initSender = false;
+TCHAR g_szDllDir[MAX_PATH] = { 0 };
+unsigned int iCurrentProcNum = 0;
+HWND hSenderWnd = NULL;
+bool init = false;
+#pragma data_seg ()
+#pragma comment (linker, "/section:.shared,rws")
 
 bool _GetEnv(const TCHAR* key, TCHAR* value, DWORD nSize)
 {
@@ -80,9 +84,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 {
     switch (ul_reason_for_call)
     {
-    case DLL_PROCESS_ATTACH:
-		ZeroMemory(g_szDllPath, sizeof(g_szDllPath));
-		GetModuleFileName(hModule, g_szDllPath, MAX_PATH);
+	case DLL_PROCESS_ATTACH: {
+		//获取dll父目录
+		if (g_szDllDir[0] == _T('\0')) {
+			GetModuleFileName(hModule, g_szDllDir, MAX_PATH);
+			PathRemoveFileSpec(g_szDllDir);
+		}
+	}
 		break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
@@ -116,16 +124,7 @@ void FreeProvider(LPWSAPROTOCOL_INFOW pProtoInfo)
 	GlobalFree(pProtoInfo);
 }
 
-int WSPAPI WSPConnect(
-	SOCKET s,
-	const struct sockaddr FAR* name,
-	int namelen,
-	LPWSABUF lpCallerData,
-	LPWSABUF lpCalleeData,
-	LPQOS lpSQOS,
-	LPQOS lpGQOS,
-	LPINT lpErrno
-)
+int WSPAPI WSPConnect(SOCKET s, const struct sockaddr FAR* name, int namelen, LPWSABUF lpCallerData, LPWSABUF lpCalleeData, LPQOS lpSQOS, LPQOS lpGQOS, LPINT lpErrno)
 {
 	for (int i = 0; i < iCurrentProcNum; i++)
 	{
@@ -135,21 +134,23 @@ int WSPAPI WSPConnect(
 				sockaddr_in* addr = (sockaddr_in*)name;
 				TCHAR cAddr[16] = { 0 };
 				InetNtop(AF_INET, &addr->sin_addr, cAddr, 16);
+				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
+				
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin_addr;
 				copyData.cbData = sizeof(addr->sin_addr);
 				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
-				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 			}
 			else if (namelen == sizeof(sockaddr_in6)) {
 				sockaddr_in6* addr = (sockaddr_in6*)name;
 				TCHAR cAddr[46] = { 0 };
 				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 46);
+				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
+
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin6_addr;
 				copyData.cbData = sizeof(addr->sin6_addr);
 				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
-				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 			}
 
 			break;
@@ -159,19 +160,7 @@ int WSPAPI WSPConnect(
 	return g_NextProcTable.lpWSPConnect(s, name, namelen, lpCallerData, lpCalleeData, lpSQOS, lpGQOS, lpErrno);
 }
 
-int WSPAPI WSPSendTo(
-	SOCKET s,
-	LPWSABUF lpBuffers,
-	DWORD dwBufferCount,
-	LPDWORD lpNumberOfBytesSent,
-	DWORD dwFlags,
-	const struct sockaddr FAR* lpTo,
-	int iTolen,
-	LPWSAOVERLAPPED lpOverlapped,
-	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine,
-	LPWSATHREADID lpThreadId,
-	LPINT lpErrno
-)
+int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent, DWORD dwFlags, const struct sockaddr FAR* lpTo, int iTolen, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine, LPWSATHREADID lpThreadId, LPINT lpErrno)
 {
 	for (int i = 0; i < iCurrentProcNum; i++)
 	{
@@ -181,21 +170,23 @@ int WSPAPI WSPSendTo(
 				sockaddr_in* addr = (sockaddr_in*)lpTo;
 				TCHAR cAddr[16] = { 0 };
 				InetNtop(AF_INET, &addr->sin_addr, cAddr, 16);
+				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
+
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin_addr;
 				copyData.cbData = sizeof(addr->sin_addr);
 				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
-				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 			}
 			else if (iTolen == sizeof(sockaddr_in6)) {
 				sockaddr_in6* addr = (sockaddr_in6*)lpTo;
 				TCHAR cAddr[46] = { 0 };
 				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 46);
+				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
+
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin6_addr;
 				copyData.cbData = sizeof(addr->sin6_addr);
 				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
-				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 			}
 
 			break;
@@ -219,30 +210,22 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		return WSAEPROVIDERFAILEDINIT;
 	}
 
-	if (!initSender)
-	{
-		initSender = true;
-
-		// 从注册表获取sender窗口句柄
-#define KEY_SENDER_HWND _T("hwnd@sender")
-		TCHAR szSenderHwnd[16] = { 0 };
-		_GetEnv(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
-		_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
-		PrintDebugString(_T("Success: 得到sender的窗口句柄：%x"), hSenderWnd);
-
-		// 获取本进程名
-		ZeroMemory(g_szCurrentApp, sizeof(g_szCurrentApp));
+	//获取本进程名
+	if (g_szCurrentApp[0] == _T('\0')) {
 		GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
 		PathStripPath(g_szCurrentApp);
 		PathRemoveExtension(g_szCurrentApp);
 		PrintDebugString(_T("Success: %s.%s"), g_szCurrentApp, __FUNC__);
-
-		// 从文件加载需要拦截的应用程序
-		PathRemoveFileSpec(g_szDllPath);
-		PathAppend(g_szDllPath, CONFIG_FILE);
-		PrintDebugString(_T("Success: cfgFilePath: %s"), g_szDllPath);
-		ifstream ifs(g_szDllPath);
-		ZeroMemory(g_szHookProc, sizeof(g_szHookProc));
+	}
+	//一次初始化
+	if (!init) {
+		init = true;
+		//从文件加载需要拦截的应用程序
+		TCHAR szCfgFilePath[MAX_PATH];
+		lstrcpy(szCfgFilePath, g_szDllDir);
+		PathAppend(szCfgFilePath, CONFIG_FILE);
+		PrintDebugString(_T("Success: cfgFilePath: %s"), szCfgFilePath);
+		ifstream ifs(szCfgFilePath);
 		int i = 0;
 		while (ifs.getline(g_szHookProc[i], MAX_PROC_NAME)) {
 			PrintDebugString(_T("Success: 拦截进程：%s"), g_szHookProc[i]);
@@ -253,6 +236,30 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		}
 		iCurrentProcNum = i;
 		ifs.close();
+
+		//开启sender进程
+		TCHAR szSenderPath[MAX_PATH];
+		lstrcpy(szSenderPath, g_szDllDir);
+		PathAppend(szSenderPath, SENDER_FILE);
+		STARTUPINFO si = { 0 };
+		PROCESS_INFORMATION pi = { 0 };
+		si.cb = sizeof(STARTUPINFO);
+		si.wShowWindow = SW_HIDE;
+		si.dwFlags = STARTF_USESHOWWINDOW;
+		if (!CreateProcess(NULL, szSenderPath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+		{
+			PrintDebugString(_T("Failure: 创建进程%s失败：%d\n"), szSenderPath, GetLastError());
+		}
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+		Sleep(500);//等注册表写好，也可以等待sender里SetEvent
+
+		//从注册表获取sender窗口句柄
+#define KEY_SENDER_HWND _T("hwnd@sender")
+		TCHAR szSenderHwnd[16] = { 0 };
+		_GetEnv(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
+		_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
+		PrintDebugString(_T("Success: 得到sender的窗口句柄：%x"), hSenderWnd);
 	}
 
 	// 枚举协议，找到下层协议的WSAPROTOCOL_INFOW结构

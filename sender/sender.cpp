@@ -3,9 +3,9 @@
 
 #include "framework.h"
 #include "sender.h"
+#include <unordered_map>
 #include <WS2tcpip.h>
 #pragma comment(lib,"ws2_32.lib")
-#include <map>
 
 #define MAX_LOADSTRING 100
 
@@ -14,6 +14,7 @@ HINSTANCE hInst;                                // 当前实例
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
+std::unordered_map<tstring, int> ipMap;
 SOCKET sock;
 
 // 此代码模块中包含的函数的前向声明:
@@ -111,10 +112,13 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
 
    //先把窗口句柄存环境变量
+   PrintDebugString(_T("Success: 检查自身窗口句柄：%x"), hWnd);
 #define KEY_HWND _T("hwnd@sender")
    TCHAR szHwnd[16] = { 0 };
    _stprintf_s(szHwnd, _T("%x"), hWnd);
-   _AddEnv(KEY_HWND, szHwnd);
+   if (!_AddEnv(KEY_HWND, szHwnd)) {
+       PrintDebugString(_T("Success: 窗口句柄写入环境变量失败：%d"), GetLastError());
+   }
    
    //创建与服务器通信的socket
    /*WSADATA wsaData;
@@ -145,59 +149,33 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //  WM_DESTROY  - 发送退出消息并返回
 //
 //
-struct IPV4 {
-    IN_ADDR addr;
-    bool operator<(const IPV4& rs) const
-    {
-        if (addr.S_un.S_addr < rs.addr.S_un.S_addr)
-        {
-            return true;
-        }
-        return false;
-    }
-};
-struct IPV6 {
-    IN6_ADDR addr;
-    bool operator<(const IPV6& rs) const
-    {
-        if (addr.u.Byte < rs.addr.u.Byte)
-        {
-            return true;
-        }
-        return false;
-    }
-};
-std::map<IPV4, int> ipv4;
-std::map<IPV6, int> ipv6;
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
     case WM_COPYDATA: {
         COPYDATASTRUCT* pCopyData = reinterpret_cast<COPYDATASTRUCT*>(lParam);
-        if (wParam == 4) {//ipv4
+        if (wParam == 4) {  //ipv4
             IN_ADDR* pAddr = (IN_ADDR*)pCopyData->lpData;
             TCHAR cAddr[16];
             InetNtop(AF_INET, pAddr, cAddr, 16);
             PrintDebugString(_T("Success: 获得ipv4地址：%s"), cAddr);
 
-            auto it = ipv4.insert(std::pair<IPV4, int>({ *pAddr }, 1));
+            auto it = ipMap.insert(std::pair<tstring, int>(cAddr, 1));
             if (it.second) {
-                PrintDebugString(_T("Success: 获得新的ipv4地址：%s, total:%d"), cAddr, ipv4.size());
-                //send
+                PrintDebugString(_T("Success: IPSetSize: %d"), ipMap.size());
                 //send(sock, (char*)cAddr, sizeof(cAddr), 0);
             }
         }
-        else if (wParam == 6) {//ipv6
+        else if (wParam == 6) { //ipv6
             IN6_ADDR* pAddr = (IN6_ADDR*)pCopyData->lpData;
             TCHAR cAddr[46];
             InetNtop(AF_INET6, pAddr, cAddr, 46);
             PrintDebugString(_T("Success: 获得ipv6地址：%s"), cAddr);
-
-            auto it = ipv6.insert(std::pair<IPV6, int>({ *pAddr }, 1));
+            
+            auto it = ipMap.insert(std::pair<tstring, int>(cAddr, 1));
             if (it.second) {
-                PrintDebugString(_T("Success: 获得新的ipv6地址：%s, total:%d"), cAddr, ipv6.size());
-                //send
+                PrintDebugString(_T("Success: IPSetSize: %d"), ipMap.size());
                 //send(sock, (char*)cAddr, sizeof(cAddr), 0);
             }
         }

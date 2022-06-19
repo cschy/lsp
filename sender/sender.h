@@ -8,12 +8,12 @@
 	#define __FUNC__ __FUNCTIONW__
 	#define tstring std::wstring
 	#define to_tstring std::to_wstring
-	#define ifstream std::wifstream
+	//#define ifstream std::wifstream
 #else
 	#define __FUNC__ __FUNCTION__
 	#define tstring std::string
 	#define to_tstring std::to_string
-	#define ifstream std::ifstream
+	//#define ifstream std::ifstream
 #endif // UNICODE
 
 bool _AddEnv(const TCHAR* key, const TCHAR* value)

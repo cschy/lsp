@@ -2,16 +2,18 @@
 //
 //#include <afxwin.h>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <Ws2spi.h>
 #include <tchar.h>
 #include <SpOrder.h>
 #include <string>
 #include <vector>
+#include <TlHelp32.h>
+#include <assert.h>
 #include <ShlObj.h>
 #include <Shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
-
-
 #pragma comment(lib, "ws2_32.lib")  //加载 ws2_32.dll
 
 //自定义宏
@@ -20,15 +22,19 @@
     #define tstring std::wstring
     #define to_tstring std::to_wstring
     #define ifstream std::wifstream
+    #define stringstream std::wstringstream
 #else
     #define __FUNC__ __FUNCTION__
     #define tstring std::string
     #define to_tstring std::to_string
     #define ifstream std::ifstream
+    #define stringstream std::stringstream
 #endif // UNICODE
 
+#define PAUSE_RETURN system("pause");return 0
 #define LSP_ENTRYID _T("LSP-CatalogEntryId")
-#define LSP_ENTRYID_LEN 32
+#define LSP_ENTRYID_LEN 8
+
 
 bool _AddEnv(const TCHAR* key, const TCHAR* value)
 {
@@ -37,6 +43,7 @@ bool _AddEnv(const TCHAR* key, const TCHAR* value)
     {
         if (ERROR_SUCCESS == RegSetValueEx(hKey, key, 0, REG_SZ, (PBYTE)value, sizeof(TCHAR) * lstrlen(value)))
         {
+            _tprintf_s(_T("成功设置环境变量：%s:%s\n"), key, value);
             RegCloseKey(hKey);
             return true;
         }
@@ -54,6 +61,7 @@ bool _DelEnv(const TCHAR* key)
     {
         if (ERROR_SUCCESS == RegDeleteValue(hKey, key))
         {
+            _tprintf_s(_T("成功删除环境变量：%s\n"), key);
             RegCloseKey(hKey);
             return true;
         }
@@ -72,6 +80,7 @@ bool _GetEnv(const TCHAR* key, TCHAR* value, DWORD nSize)
         DWORD size = sizeof(TCHAR) * nSize;
         if (ERROR_SUCCESS == RegQueryValueEx(hKey, key, NULL, NULL, (LPBYTE)value, &size)) 
         {
+            _tprintf_s(_T("成功获取环境变量：%s:%s\n"), key, value);
             RegCloseKey(hKey);
             return true;
         }
@@ -342,6 +351,33 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
 //    }
 //}
 
+bool isProcessOpen(const TCHAR* szProc, bool& open)
+{
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    
+    if (hProcessSnap == INVALID_HANDLE_VALUE) {
+        _tprintf_s(_T("Failure: CreateToolhelp32Snapshot: %d\n"), GetLastError());
+        return false;
+    }
+
+    bool find = false;
+    BOOL bMore = Process32First(hProcessSnap, &pe32);
+    while (bMore) 
+    {
+        PathRemoveExtension(pe32.szExeFile);
+        if (lstrcmp(pe32.szExeFile, szProc) == 0) {
+            find = true;
+            break;
+        }
+        bMore = Process32Next(hProcessSnap, &pe32);
+    }
+    open = find;
+    CloseHandle(hProcessSnap);
+    return true;
+}
+
 bool GetUserSelectDir(tstring& res)
 {
     HRESULT hr = CoInitialize(NULL);
@@ -378,41 +414,37 @@ int _tmain(int argc, TCHAR* argv[])
 {
     setlocale(LOCALE_ALL, "chs");
 
+    _tprintf_s(_T("第零步：获取用户请求\n"));
     int ans = MessageBox(NULL, _T("安装：是，卸载：否，什么也不做：取消"), _T("提示"), MB_YESNOCANCEL | MB_DEFBUTTON3 | MB_ICONQUESTION);
     if (ans == IDCANCEL) {
-        return 0;
+        PAUSE_RETURN;
     }
     else if (ans == IDNO) {
         TCHAR szEntryId[LSP_ENTRYID_LEN];
         if (!_GetEnv(LSP_ENTRYID, szEntryId, LSP_ENTRYID_LEN)) {
             MessageBox(NULL, _T("已经卸载"), _T("提示"), MB_ICONINFORMATION);
-            return 0;
+            PAUSE_RETURN;
         }
-        _tprintf_s(_T("获取环境变量成功 [key: %s, value:%s]\n"), LSP_ENTRYID, szEntryId);
         DWORD dwEntryId;
         _stscanf_s(szEntryId, _T("%d"), &dwEntryId);
         bool res = RemoveProvider(dwEntryId);
         if (res) {
-            if (_DelEnv(LSP_ENTRYID)) {
-                _tprintf_s(_T("删除环境变量成功 [key:%s]\n"), LSP_ENTRYID);
-            }
-            MessageBox(NULL, _T("卸载分层协议及其协议链成功，为保证正常的网络环境，\n请注销或重启"), _T("提示"), MB_ICONINFORMATION);
+            _DelEnv(LSP_ENTRYID);
+            MessageBox(NULL, _T("卸载分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
         }
         else {
             MessageBox(NULL, _T("卸载分层协议及其协议链失败"), _T("错误"), MB_ICONWARNING);
         }
-        return 0;
+        PAUSE_RETURN;
     }
 
-    _tprintf_s(_T("第一步：检查环境变量判断是否已经安装：%s\n"), LSP_ENTRYID);
+
+    _tprintf_s(_T("第一步：检查环境变量[%s]判断是否已经安装\n"), LSP_ENTRYID);
     TCHAR szEntryId[LSP_ENTRYID_LEN];
     if (_GetEnv(LSP_ENTRYID, szEntryId, LSP_ENTRYID_LEN)) {
-        int ans = MessageBox(NULL, _T("检测到已经安装，是否重新安装？"), _T("提示"), MB_OKCANCEL | MB_DEFBUTTON2 | MB_ICONQUESTION);
-        if (ans == IDCANCEL) {
-            return 0;
-        }
+        MessageBox(NULL, _T("检测到已经安装，请先卸载"), _T("提示"), MB_ICONINFORMATION);
+        PAUSE_RETURN;
     }
-
     /*tstring selectDir;
     if (!GetUserSelectDir(selectDir)) {
         MessageBox(GetConsoleWindow(), _T("请选择存放dll的文件夹，最好放在系统盘的目录下"), _T("提示"), MB_OK);
@@ -420,24 +452,28 @@ int _tmain(int argc, TCHAR* argv[])
     }
     _tprintf_s(_T("选择安放dll的文件夹：%s\n"), selectDir.c_str());*/
 
-    const TCHAR szDllFile[] = _T("lsp.dll");
-    const TCHAR szCfgFile[] = _T("lsp.config");
-    const TCHAR szSelectDir[] = _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp");
+
+#define szDllFile _T("lsp.dll")
+#define szCfgFile _T("lsp.config")
+#define szSenderFile _T("sender.exe")
+#define szSelectDir _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp")
     _tprintf_s(_T("第二步：拷贝dll及其资源到安全目录：%s\n"), szSelectDir);
     if (!PathIsDirectory(szSelectDir)) {
         if (!CreateDirectory(szSelectDir, NULL) && GetLastError() == ERROR_PATH_NOT_FOUND) {
             MessageBox(NULL, _T("非统一客户端用户禁止使用"), _T("错误"), MB_ICONWARNING);
-            return 0;
+            PAUSE_RETURN;
         }
     }
 
-    TCHAR srcDllFile[MAX_PATH], srcCfgFile[MAX_PATH];
+    TCHAR srcDllFile[MAX_PATH], srcCfgFile[MAX_PATH], srcSenderFile[MAX_PATH];
     GetModuleFileName(NULL, srcDllFile, MAX_PATH);
     PathRemoveFileSpec(srcDllFile);
     lstrcpy(srcCfgFile, srcDllFile);
+    lstrcpy(srcSenderFile, srcDllFile);
 
     PathAppend(srcDllFile, szDllFile);
     PathAppend(srcCfgFile, szCfgFile);
+    PathAppend(srcSenderFile, szSenderFile);
 
     TCHAR dstDllFile[MAX_PATH];
     lstrcpy(dstDllFile, szSelectDir);
@@ -447,11 +483,21 @@ int _tmain(int argc, TCHAR* argv[])
     lstrcpy(dstCfgFile, szSelectDir);
     PathAppend(dstCfgFile, szCfgFile);
 
+    TCHAR dstSenderFile[MAX_PATH];
+    lstrcpy(dstSenderFile, szSelectDir);
+    PathAppend(dstSenderFile, szSenderFile);
+
     if (!CopyFile(srcDllFile, dstDllFile, FALSE)) {
         _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcDllFile, dstDllFile);
+        PAUSE_RETURN;
     }
     if (!CopyFile(srcCfgFile, dstCfgFile, FALSE)) {
         _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcCfgFile, dstCfgFile);
+        PAUSE_RETURN;
+    }
+    if (!CopyFile(srcSenderFile, dstSenderFile, FALSE)) {
+        _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcSenderFile, dstSenderFile);
+        PAUSE_RETURN;
     }
     /*std::vector<tstring> paths;
     GetPathExceptSelf(paths);
@@ -473,22 +519,34 @@ int _tmain(int argc, TCHAR* argv[])
         }
     }*/
     
+    //确保配置文件中的进程已关闭
+    _tprintf_s(_T("安装之前确保配置文件中的进程已关闭\n"));
+    ifstream ifs(dstCfgFile);
+#define MAX_PROC_NAME 16
+    TCHAR szHookProc[MAX_PROC_NAME];
+    stringstream ss;
+    while (ifs.getline(szHookProc, MAX_PROC_NAME)) 
+    {
+        bool open = true;
+        isProcessOpen(szHookProc, open);
+        if (open) {
+            ss << _T("请关闭：") << szHookProc << std::endl;
+        }
+        ZeroMemory(szHookProc, sizeof(szHookProc));
+    }
+    ifs.close();
+    _tprintf_s(_T("%s\n"), ss.str().c_str());
+    if (!ss.str().empty()) {
+        MessageBox(NULL, _T("请先关闭命令行提示的软件"), _T("提示"), MB_ICONWARNING);
+        PAUSE_RETURN;
+    }
 
     _tprintf_s(_T("第三步：安装dll：%s\n"), dstDllFile);
     if (InstallProvider(dstDllFile)) {
-        //开启sender进程
-        TCHAR szSenderProc[] = _T("sender.exe");
-        STARTUPINFO si = { 0 };
-        PROCESS_INFORMATION pi = { 0 };
-        si.cb = sizeof(STARTUPINFO);
-        si.wShowWindow = SW_HIDE;
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        CreateProcess(NULL, szSenderProc, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-        MessageBox(NULL, _T("安装分层协议及其协议链成功，请重启需要联网的通讯软件"), _T("提示"), MB_ICONINFORMATION);
+        MessageBox(NULL, _T("安装分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
     }
     else {
         MessageBox(NULL, _T("安装分层协议及其协议链失败"), _T("错误"), MB_ICONWARNING);
     }
-
-    return 0;
+    PAUSE_RETURN;
 }
