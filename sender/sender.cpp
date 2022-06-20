@@ -3,9 +3,10 @@
 
 #include "framework.h"
 #include "sender.h"
-#include <unordered_map>
 #include <WS2tcpip.h>
 #pragma comment(lib,"ws2_32.lib")
+#include <unordered_set>
+#include <codecvt>
 
 #define MAX_LOADSTRING 100
 
@@ -14,7 +15,7 @@ HINSTANCE hInst;                                // 当前实例
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
-std::unordered_map<tstring, int> ipMap;
+std::unordered_set<tstring> ipSet;
 SOCKET sock;
 
 // 此代码模块中包含的函数的前向声明:
@@ -121,16 +122,16 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
    
    //创建与服务器通信的socket
-   /*WSADATA wsaData;
+   WSADATA wsaData;
    WSAStartup(MAKEWORD(2, 2), &wsaData);
    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
    struct sockaddr_in sockAddr = { 0 };
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 8888
+#define SERVER_IP "192.168.121.6"
+#define SERVER_PORT 9529
    sockAddr.sin_family = AF_INET;
    inet_pton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
    sockAddr.sin_port = htons(SERVER_PORT);
-   connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));*/
+   connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
 
 
    ShowWindow(hWnd, nCmdShow);
@@ -149,6 +150,33 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //  WM_DESTROY  - 发送退出消息并返回
 //
 //
+std::string UnicodeToUTF8(const std::wstring& wstr)
+{
+    std::string ret;
+    try {
+        std::wstring_convert< std::codecvt_utf8<wchar_t> > wcv;
+        ret = wcv.to_bytes(wstr);
+    }
+    catch (const std::exception& e) {
+        //std::cerr << e.what() << std::endl;
+    }
+    return ret;
+}
+
+std::wstring UTF8ToUnicode(const std::string& str)
+{
+    std::wstring ret;
+    try {
+        std::wstring_convert< std::codecvt_utf8<wchar_t> > wcv;
+        ret = wcv.from_bytes(str);
+    }
+    catch (const std::exception& e) {
+        //std::cout << e.what() << std::endl;
+    }
+    return ret;
+}
+
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
@@ -161,10 +189,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             InetNtop(AF_INET, pAddr, cAddr, 16);
             PrintDebugString(_T("Success: 获得ipv4地址：%s"), cAddr);
 
-            auto it = ipMap.insert(std::pair<tstring, int>(cAddr, 1));
-            if (it.second) {
-                PrintDebugString(_T("Success: IPSetSize: %d"), ipMap.size());
-                //send(sock, (char*)cAddr, sizeof(cAddr), 0);
+            if (ipSet.insert(cAddr).second) {
+                PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
+                std::string data = UnicodeToUTF8(cAddr);
+                send(sock, data.c_str(), sizeof(cAddr), 0);
             }
         }
         else if (wParam == 6) { //ipv6
@@ -173,10 +201,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             InetNtop(AF_INET6, pAddr, cAddr, 46);
             PrintDebugString(_T("Success: 获得ipv6地址：%s"), cAddr);
             
-            auto it = ipMap.insert(std::pair<tstring, int>(cAddr, 1));
-            if (it.second) {
-                PrintDebugString(_T("Success: IPSetSize: %d"), ipMap.size());
-                //send(sock, (char*)cAddr, sizeof(cAddr), 0);
+            if (ipSet.insert(cAddr).second) {
+                PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
+                std::string data = UnicodeToUTF8(cAddr);
+                send(sock, data.c_str(), sizeof(cAddr), 0);
             }
         }
 
