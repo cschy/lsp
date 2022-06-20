@@ -85,15 +85,14 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
 	case DLL_PROCESS_ATTACH: {
-		//获取本进程名
-		if (g_szCurrentApp[0] == _T('\0')) {
-			GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
-			PathStripPath(g_szCurrentApp);
-			PathRemoveExtension(g_szCurrentApp);
-			if (lstrcmp(g_szCurrentApp, _T("svchost")) == 0) {
-				return FALSE;
-			}
-		}
+		////不让烦人的svchost进程加载
+		//TCHAR szCurrentApp[MAX_PATH];
+		//GetModuleFileName(NULL, szCurrentApp, MAX_PATH);
+		//PathStripPath(szCurrentApp);
+		//if (lstrcmp(szCurrentApp, _T("svchost.exe")) == 0) {
+		//	return FALSE;
+		//}
+		
 		//获取dll父目录
 		if (g_szDllDir[0] == _T('\0')) {
 			GetModuleFileName(hModule, g_szDllDir, MAX_PATH);

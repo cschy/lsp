@@ -7,8 +7,11 @@
 #pragma comment(lib,"ws2_32.lib")
 #include <unordered_set>
 #include <codecvt>
+#include <thread>
 
 #define MAX_LOADSTRING 100
+#define SERVER_IP "192.168.121.6"
+#define SERVER_PORT 9529
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -121,19 +124,20 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
        PrintDebugString(_T("Success: 窗口句柄写入环境变量失败：%d"), GetLastError());
    }
    
-   //创建与服务器通信的socket
-   WSADATA wsaData;
-   WSAStartup(MAKEWORD(2, 2), &wsaData);
-   sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-   struct sockaddr_in sockAddr = { 0 };
-#define SERVER_IP "192.168.121.6"
-#define SERVER_PORT 9529
-   sockAddr.sin_family = AF_INET;
-   inet_pton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
-   sockAddr.sin_port = htons(SERVER_PORT);
-   connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
-
-
+   std::thread([]() {
+       //创建与服务器通信的socket
+       WSADATA wsaData;
+       WSAStartup(MAKEWORD(2, 2), &wsaData);
+       sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+       struct sockaddr_in sockAddr = { 0 };
+       sockAddr.sin_family = AF_INET;
+       inet_pton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
+       sockAddr.sin_port = htons(SERVER_PORT);
+       connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
+       PrintDebugString(_T("Success: 连接服务器成功[%s:%d]"), SERVER_IP, SERVER_PORT);
+   }).detach();
+   
+   
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
 
@@ -191,8 +195,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
-                std::string data = UnicodeToUTF8(cAddr);
-                send(sock, data.c_str(), sizeof(cAddr), 0);
+                //std::string data = UnicodeToUTF8(cAddr);
+                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(cAddr), 0);
             }
         }
         else if (wParam == 6) { //ipv6
@@ -203,8 +207,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
-                std::string data = UnicodeToUTF8(cAddr);
-                send(sock, data.c_str(), sizeof(cAddr), 0);
+                //std::string data = UnicodeToUTF8(cAddr);
+                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(cAddr), 0);
             }
         }
 

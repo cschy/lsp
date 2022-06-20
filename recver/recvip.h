@@ -53,7 +53,7 @@ protected:
 		data->sendBuf = "unknown module: " + request[KEY_MODULE];
 		return data;*/
 
-		std::cout << "recvIP: " << data->readBuf << std::endl;
+		std::cout << "recvIP: " << data->readBuf.c_str() << std::endl;
 		return data;
 	}
 
