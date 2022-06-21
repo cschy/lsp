@@ -7,13 +7,10 @@
 #pragma comment(lib,"ws2_32.lib")
 #include <unordered_set>
 #include <codecvt>
-#include <thread>
 
 #define MAX_LOADSTRING 100
-//#define SERVER_IP _T("192.168.121.6")
-//#define SERVER_PORT 9529
-#define SERVER_IP _T("47.108.154.203")
-#define SERVER_PORT 6666
+#define SERVER_IP _T("192.168.120.6")
+#define SERVER_PORT 9529
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -38,6 +35,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     // TODO: 在此处放置代码。
+    // 创建与服务器通信的socket
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    struct sockaddr_in sockAddr = { 0 };
+    sockAddr.sin_family = AF_INET;
+    InetPton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
+    sockAddr.sin_port = htons(SERVER_PORT);
+    connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
+    PrintDebugString(_T("Success: 连接服务器成功[%s:%d]"), SERVER_IP, SERVER_PORT);
 
     // 初始化全局字符串
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -126,19 +133,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
        PrintDebugString(_T("Success: 窗口句柄写入环境变量失败：%d"), GetLastError());
    }
    
-   std::thread([]() {
-       //创建与服务器通信的socket
-       WSADATA wsaData;
-       WSAStartup(MAKEWORD(2, 2), &wsaData);
-       sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-       struct sockaddr_in sockAddr = { 0 };
-       sockAddr.sin_family = AF_INET;
-       InetPton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
-       sockAddr.sin_port = htons(SERVER_PORT);
-       connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
-       PrintDebugString(_T("Success: 连接服务器成功[%s:%d]"), SERVER_IP, SERVER_PORT);
-   }).detach();
-   
    
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -197,10 +191,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
-                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(cAddr), 0);
-                char recvBuf[32];
+                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(TCHAR) * lstrlen(cAddr), 0);
+                /*char recvBuf[32];
                 recv(sock, recvBuf, sizeof(recvBuf), 0);
-                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());
+                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
             }
         }
         else if (wParam == 6) { //ipv6
@@ -211,10 +205,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
-                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(cAddr), 0);
-                char recvBuf[32];
+                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(TCHAR) * lstrlen(cAddr), 0);
+                /*char recvBuf[32];
                 recv(sock, recvBuf, sizeof(recvBuf), 0);
-                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());
+                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
             }
         }
 
