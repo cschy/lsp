@@ -10,8 +10,10 @@
 #include <thread>
 
 #define MAX_LOADSTRING 100
-#define SERVER_IP "192.168.121.6"
-#define SERVER_PORT 9529
+//#define SERVER_IP _T("192.168.121.6")
+//#define SERVER_PORT 9529
+#define SERVER_IP _T("47.108.154.203")
+#define SERVER_PORT 6666
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -131,7 +133,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
        sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
        struct sockaddr_in sockAddr = { 0 };
        sockAddr.sin_family = AF_INET;
-       inet_pton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
+       InetPton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
        sockAddr.sin_port = htons(SERVER_PORT);
        connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
        PrintDebugString(_T("Success: 连接服务器成功[%s:%d]"), SERVER_IP, SERVER_PORT);
@@ -195,8 +197,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
-                //std::string data = UnicodeToUTF8(cAddr);
                 send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(cAddr), 0);
+                char recvBuf[32];
+                recv(sock, recvBuf, sizeof(recvBuf), 0);
+                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());
             }
         }
         else if (wParam == 6) { //ipv6
@@ -207,8 +211,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
-                //std::string data = UnicodeToUTF8(cAddr);
                 send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(cAddr), 0);
+                char recvBuf[32];
+                recv(sock, recvBuf, sizeof(recvBuf), 0);
+                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());
             }
         }
 

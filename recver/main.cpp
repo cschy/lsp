@@ -16,7 +16,7 @@
 #include "main.h"
 #include "recvip.h"
 
-#define PORT        8888
+#define PORT        6666
 #define MAXEPOLL    4096
 #define MAXEVENTS   64
 #define MAXLINE     1024
@@ -180,6 +180,7 @@ void startServer(Business* business)
 
 int main(int argc, char* argv[])
 {    
+    std::setlocale(LC_ALL, "en_US.UTF-8");
     startServer(new RecvIp);
     return 0;
 }

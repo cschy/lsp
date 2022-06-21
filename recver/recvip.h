@@ -25,7 +25,7 @@ public:
 		//如果明文传输被抓包了，黑客一直发送请求会导致缓冲区爆炸
 		MyData* datas = read_parse(data);
 		data->readBuf.clear();
-		//sendData(datas);
+		sendData(datas);
 	}
 
 protected:
@@ -52,8 +52,9 @@ protected:
 		}
 		data->sendBuf = "unknown module: " + request[KEY_MODULE];
 		return data;*/
-
-		std::cout << "recvIP: " << data->readBuf.c_str() << std::endl;
+		
+		//std::cout << "recvIP: " << data->readBuf.c_str() << std::endl;
+		data->sendBuf = "server recv ip";
 		return data;
 	}
 
