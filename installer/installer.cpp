@@ -413,7 +413,7 @@ bool GetUserSelectDir(tstring& res)
 int _tmain(int argc, TCHAR* argv[])
 {
     setlocale(LOCALE_ALL, "chs");
-
+    
     _tprintf_s(_T("第零步：获取用户请求\n"));
     int ans = MessageBox(NULL, _T("安装：是，卸载：否，什么也不做：取消"), _T("提示"), MB_YESNOCANCEL | MB_DEFBUTTON3 | MB_ICONQUESTION);
     if (ans == IDCANCEL) {
@@ -437,7 +437,7 @@ int _tmain(int argc, TCHAR* argv[])
         }
         PAUSE_RETURN;
     }
-
+    
 
     _tprintf_s(_T("第一步：检查环境变量[%s]判断是否已经安装\n"), LSP_ENTRYID);
     TCHAR szEntryId[LSP_ENTRYID_LEN];
@@ -456,7 +456,8 @@ int _tmain(int argc, TCHAR* argv[])
 #define szDllFile _T("lsp.dll")
 #define szCfgFile _T("lsp.config")
 #define szSenderFile _T("sender.exe")
-#define szSelectDir _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp")
+#define szIpFile _T("ip.config")
+#define szSelectDir _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\")
     _tprintf_s(_T("第二步：拷贝dll及其资源到安全目录：%s\n"), szSelectDir);
     if (!PathIsDirectory(szSelectDir)) {
         if (!CreateDirectory(szSelectDir, NULL) && GetLastError() == ERROR_PATH_NOT_FOUND) {
@@ -465,38 +466,26 @@ int _tmain(int argc, TCHAR* argv[])
         }
     }
 
-    TCHAR srcDllFile[MAX_PATH], srcCfgFile[MAX_PATH], srcSenderFile[MAX_PATH];
-    GetModuleFileName(NULL, srcDllFile, MAX_PATH);
-    PathRemoveFileSpec(srcDllFile);
-    lstrcpy(srcCfgFile, srcDllFile);
-    lstrcpy(srcSenderFile, srcDllFile);
+    auto fnCopyFile = [](const TCHAR* file, const TCHAR* dstFilePath) {
+        TCHAR srcFilePath[MAX_PATH];
+        GetModuleFileName(NULL, srcFilePath, MAX_PATH);
+        PathRemoveFileSpec(srcFilePath);
+        PathAppend(srcFilePath, file);
 
-    PathAppend(srcDllFile, szDllFile);
-    PathAppend(srcCfgFile, szCfgFile);
-    PathAppend(srcSenderFile, szSenderFile);
-
-    TCHAR dstDllFile[MAX_PATH];
-    lstrcpy(dstDllFile, szSelectDir);
-    PathAppend(dstDllFile, szDllFile);
-
-    TCHAR dstCfgFile[MAX_PATH];
-    lstrcpy(dstCfgFile, szSelectDir);
-    PathAppend(dstCfgFile, szCfgFile);
-
-    TCHAR dstSenderFile[MAX_PATH];
-    lstrcpy(dstSenderFile, szSelectDir);
-    PathAppend(dstSenderFile, szSenderFile);
-
-    if (!CopyFile(srcDllFile, dstDllFile, FALSE)) {
-        _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcDllFile, dstDllFile);
-        PAUSE_RETURN;
-    }
-    if (!CopyFile(srcCfgFile, dstCfgFile, FALSE)) {
-        _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcCfgFile, dstCfgFile);
-        PAUSE_RETURN;
-    }
-    if (!CopyFile(srcSenderFile, dstSenderFile, FALSE)) {
-        _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcSenderFile, dstSenderFile);
+        if (!CopyFile(srcFilePath, dstFilePath, FALSE)) {
+            _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcFilePath, dstFilePath);
+            return false;
+        }
+        return true;
+    };
+    tstring strSelectDir = szSelectDir;
+    tstring dstDllFile = strSelectDir + szDllFile;
+    tstring dstCfgFile = strSelectDir + szCfgFile;
+    if (!fnCopyFile(szDllFile, dstDllFile.c_str())
+        || !fnCopyFile(szCfgFile, dstCfgFile.c_str())
+        || !fnCopyFile(szSenderFile, (strSelectDir + szSenderFile).c_str())
+        || !fnCopyFile(szIpFile, (strSelectDir + szIpFile).c_str())
+    ) {
         PAUSE_RETURN;
     }
     /*std::vector<tstring> paths;
@@ -540,9 +529,9 @@ int _tmain(int argc, TCHAR* argv[])
         MessageBox(NULL, _T("请先关闭命令行提示的软件"), _T("提示"), MB_ICONWARNING);
         PAUSE_RETURN;
     }
-
-    _tprintf_s(_T("第三步：安装dll：%s\n"), dstDllFile);
-    if (InstallProvider(dstDllFile)) {
+    
+    _tprintf_s(_T("第三步：安装dll：%s\n"), dstDllFile.c_str());
+    if (InstallProvider(dstDllFile.c_str())) {
         MessageBox(NULL, _T("安装分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
     }
     else {

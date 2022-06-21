@@ -8,9 +8,11 @@
 #include <unordered_set>
 #include <codecvt>
 
+
 #define MAX_LOADSTRING 100
-#define SERVER_IP _T("192.168.120.6")
-#define SERVER_PORT 9529
+#define STR_HWND_REGKEY _T("hwnd@sender")
+#define STR_IPCFG_FILE _T("ip.config")
+
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -19,6 +21,7 @@ WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
 std::unordered_set<tstring> ipSet;
 SOCKET sock;
+
 
 // 此代码模块中包含的函数的前向声明:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -36,15 +39,39 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     // TODO: 在此处放置代码。
     // 创建与服务器通信的socket
+    ifstream ifs(STR_IPCFG_FILE);
+    if (ifs.fail()) {
+        PrintDebugString(false, _T("文件打开失败[file:%s, error:%s]"), STR_IPCFG_FILE, ErrStr().getStr().c_str());
+        return 0;
+    }
+    tstring strIPort;
+    std::getline(ifs, strIPort);
+    ifs.close();
+    PrintDebugString(true, _T("从文件中读取的服务器地址[file:%s, addr:%s]"), STR_IPCFG_FILE, strIPort.c_str());
+    size_t segIndex = strIPort.find_first_of(_T(':'));
+    if (segIndex == tstring::npos) {
+        PrintDebugString(false, _T("服务器地址没有冒号分隔符"));
+        return 0;
+    }
+    tstring strIp = strIPort.substr(0, segIndex);
+    tstring strPort = strIPort.substr(segIndex + 1);
+    unsigned int iPort;
+    _stscanf_s(strPort.c_str(), _T("%d"), &iPort);
+
     WSADATA wsaData;
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
+    PrintDebugString(true, _T("WSAStartup[ret:%d]"), WSAStartup(MAKEWORD(2, 2), &wsaData));
+    /*WSASYSNOTREADY: The underlying network subsystem is not ready for network communication.
+    WSAVERNOTSUPPORTED: The version of Windows Sockets support requested is not provided by this particular Windows Sockets implementation.
+    WSAEINPROGRESS: A blocking Windows Sockets 1.1 operation is in progress.
+    WSAEPROCLIM: A limit on the number of tasks supported by the Windows Sockets implementation has been reached.
+    WSAEFAULT: The lpWSAData parameter is not a valid pointer.*/
     sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     struct sockaddr_in sockAddr = { 0 };
     sockAddr.sin_family = AF_INET;
-    InetPton(AF_INET, SERVER_IP, &sockAddr.sin_addr);
-    sockAddr.sin_port = htons(SERVER_PORT);
+    InetPton(AF_INET, strIp.c_str(), &sockAddr.sin_addr);
+    sockAddr.sin_port = htons(iPort);
     connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
-    PrintDebugString(_T("Success: 连接服务器成功[%s:%d]"), SERVER_IP, SERVER_PORT);
+    PrintDebugString(true, _T("连接服务器成功[%s:%d]"), strIp.c_str(), iPort);
 
     // 初始化全局字符串
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -125,12 +152,12 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
 
    //先把窗口句柄存环境变量
-   PrintDebugString(_T("Success: 检查自身窗口句柄：%x"), hWnd);
-#define KEY_HWND _T("hwnd@sender")
-   TCHAR szHwnd[16] = { 0 };
+   PrintDebugString(true, _T("检查自身窗口句柄：%x"), hWnd);
+
+   TCHAR szHwnd[16];
    _stprintf_s(szHwnd, _T("%x"), hWnd);
-   if (!_AddEnv(KEY_HWND, szHwnd)) {
-       PrintDebugString(_T("Success: 窗口句柄写入环境变量失败：%d"), GetLastError());
+   if (!_AddEnv(STR_HWND_REGKEY, szHwnd)) {
+       PrintDebugString(false, _T("窗口句柄写入环境变量失败：%s"), ErrStr().getStr().c_str());
    }
    
    
@@ -187,28 +214,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             IN_ADDR* pAddr = (IN_ADDR*)pCopyData->lpData;
             TCHAR cAddr[16];
             InetNtop(AF_INET, pAddr, cAddr, 16);
-            PrintDebugString(_T("Success: 获得ipv4地址：%s"), cAddr);
+            PrintDebugString(true, _T("获得ipv4地址：%s"), cAddr);
 
             if (ipSet.insert(cAddr).second) {
-                PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
+                PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
                 send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(TCHAR) * lstrlen(cAddr), 0);
                 /*char recvBuf[32];
                 recv(sock, recvBuf, sizeof(recvBuf), 0);
-                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
+                PrintDebugString(true, _T("recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
             }
         }
         else if (wParam == 6) { //ipv6
             IN6_ADDR* pAddr = (IN6_ADDR*)pCopyData->lpData;
             TCHAR cAddr[46];
             InetNtop(AF_INET6, pAddr, cAddr, 46);
-            PrintDebugString(_T("Success: 获得ipv6地址：%s"), cAddr);
+            PrintDebugString(true, _T("获得ipv6地址：%s"), cAddr);
             
             if (ipSet.insert(cAddr).second) {
-                PrintDebugString(_T("Success: IPSetSize: %d"), ipSet.size());
+                PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
                 send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(TCHAR) * lstrlen(cAddr), 0);
                 /*char recvBuf[32];
                 recv(sock, recvBuf, sizeof(recvBuf), 0);
-                PrintDebugString(_T("Success: recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
+                PrintDebugString(true, _T("recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
             }
         }
 

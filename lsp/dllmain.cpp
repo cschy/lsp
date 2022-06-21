@@ -255,7 +255,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		si.cb = sizeof(STARTUPINFO);
 		si.wShowWindow = SW_HIDE;
 		si.dwFlags = STARTF_USESHOWWINDOW;
-		if (!CreateProcess(NULL, szSenderPath, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+		if (!CreateProcess(NULL, szSenderPath, NULL, NULL, FALSE, 0, NULL, g_szDllDir, &si, &pi))
 		{
 			PrintDebugString(_T("Failure: 创建进程%s失败：%d\n"), szSenderPath, GetLastError());
 		}
