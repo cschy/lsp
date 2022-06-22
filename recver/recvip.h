@@ -11,7 +11,8 @@
 
 class RecvIp : public Business
 {
-public:
+public:	
+	int iMsgs{ 0 };//test
 	virtual void accept_callback(MyData* data) {
 		addMyData(data);
 	}
@@ -25,7 +26,8 @@ public:
 		//如果明文传输被抓包了，黑客一直发送请求会导致缓冲区爆炸
 		MyData* datas = read_parse(data);
 		data->readBuf.clear();
-		sendData(datas);
+		std::cout << "recv count: " << ++iMsgs << std::endl;
+		//sendData(datas);
 	}
 
 protected:

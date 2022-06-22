@@ -1,36 +1,27 @@
 ﻿// dllmain.cpp : 定义 DLL 应用程序的入口点。
 #include "pch.h"
+#include "utils.h"
 #include <WinSock2.h>
 #pragma comment(lib,"ws2_32.lib")
 #include <WS2spi.h>
 #include <tchar.h>
 #include <WS2tcpip.h>
-#include <string>
 #include <fstream>
 #include <Shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
 
 
-//自定义宏
-#ifdef UNICODE
-	#define __FUNC__ __FUNCTIONW__
-	#define tstring std::wstring
-	#define to_tstring std::to_wstring
-	#define ifstream std::wifstream
-#else
-	#define __FUNC__ __FUNCTION__
-	#define tstring std::string
-	#define to_tstring std::to_string
-	#define ifstream std::ifstream
-#endif // UNICODE
-
 #define MAX_PROC_COUNT 16
 #define MAX_PROC_NAME 16
 #define CONFIG_FILE _T("lsp.config")
 #define SENDER_FILE _T("sender.exe")
+#define REGDIR_ENV _T("Environment")
+#define KEY_SENDER_HWND _T("hwnd@sender")
+
 
 TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
 WSPPROC_TABLE g_NextProcTable;				//下层函数列表
+
 
 #pragma data_seg (".shared")
 TCHAR g_szHookProc[MAX_PROC_COUNT][MAX_PROC_NAME] = { 0 };
@@ -41,41 +32,6 @@ bool init = false;
 #pragma data_seg ()
 #pragma comment (linker, "/section:.shared,rws")
 
-bool _GetEnv(const TCHAR* key, TCHAR* value, DWORD nSize)
-{
-	HKEY hKey;
-	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, _T("Environment"), 0, KEY_READ, &hKey))
-	{
-		DWORD size = sizeof(TCHAR) * nSize;
-		if (ERROR_SUCCESS == RegQueryValueEx(hKey, key, NULL, NULL, (LPBYTE)value, &size))
-		{
-			RegCloseKey(hKey);
-			return true;
-		}
-		_tprintf_s(_T("%s.RegQueryValueEx(%s): %d\n"), __FUNC__, key, GetLastError());
-		RegCloseKey(hKey);
-	}
-	_tprintf_s(_T("%s.RegOpenKeyEx: %d\n"), __FUNC__, GetLastError());//如何将每个api与它的描述字符对应起来
-	return false;
-}
-
-void PrintDebugString(LPCTSTR lpszFmt, ...)
-{
-	va_list args;
-	va_start(args, lpszFmt);
-	int len = _vsctprintf(lpszFmt, args) + 2;
-	TCHAR* lpszBuf = (TCHAR*)_malloca(len * sizeof(TCHAR));//栈中分配, 不需要释放
-	if (lpszBuf == NULL)
-	{
-		OutputDebugStringA("Failure: _malloca lpszBuf NULL");
-		return;
-	}
-	_vstprintf_s(lpszBuf, len, lpszFmt, args);
-	va_end(args);
-	lpszBuf[len - 2] = _T('\n');
-	lpszBuf[len - 1] = _T('\0');
-	OutputDebugString(lpszBuf);
-}
 
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
@@ -108,22 +64,23 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     return TRUE;
 }
 
-LPWSAPROTOCOL_INFOW GetProvider(LPINT lpnTotalProtocols)
+LPWSAPROTOCOL_INFOW GetProvider(LPINT lpTotalProtocols)
 {
-	LPWSAPROTOCOL_INFOW pProtoInfo = NULL;
 	DWORD dwSize = 0;
 	int nError;
+	LPWSAPROTOCOL_INFOW pProtoInfo = NULL;
 
 	// 取得需要的长度
 	if (WSCEnumProtocols(NULL, pProtoInfo, &dwSize, &nError) == SOCKET_ERROR)
 	{
 		if (nError != WSAENOBUFS) {
+			PrintDebugString(false, _T("WSCEnumProtocols:%s"), ErrWrap{}(nError).c_str());
 			return NULL;
 		}
 	}
 
-	pProtoInfo = (LPWSAPROTOCOL_INFO)GlobalAlloc(GPTR, dwSize);
-	*lpnTotalProtocols = WSCEnumProtocols(NULL, pProtoInfo, &dwSize, &nError);
+	pProtoInfo = (LPWSAPROTOCOL_INFOW)GlobalAlloc(GPTR, dwSize);
+	*lpTotalProtocols = WSCEnumProtocols(NULL, pProtoInfo, &dwSize, &nError);
 	return pProtoInfo;
 }
 
@@ -142,7 +99,7 @@ int WSPAPI WSPConnect(SOCKET s, const struct sockaddr FAR* name, int namelen, LP
 				sockaddr_in* addr = (sockaddr_in*)name;
 				TCHAR cAddr[16] = { 0 };
 				InetNtop(AF_INET, &addr->sin_addr, cAddr, 16);
-				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
+				PrintDebugString(true, _T("%s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 				
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin_addr;
@@ -153,7 +110,7 @@ int WSPAPI WSPConnect(SOCKET s, const struct sockaddr FAR* name, int namelen, LP
 				sockaddr_in6* addr = (sockaddr_in6*)name;
 				TCHAR cAddr[46] = { 0 };
 				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 46);
-				PrintDebugString(_T("Success: %s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
+				PrintDebugString(true, _T("%s.connect[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin6_addr;
@@ -178,23 +135,28 @@ int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD 
 				sockaddr_in* addr = (sockaddr_in*)lpTo;
 				TCHAR cAddr[16] = { 0 };
 				InetNtop(AF_INET, &addr->sin_addr, cAddr, 16);
-				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
+				PrintDebugString(true, _T("%s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin_port));
 
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin_addr;
 				copyData.cbData = sizeof(addr->sin_addr);
-				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
+				if (0 != SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData)) {
+					PrintDebugString(false, _T("SendMessage：%s"), ErrWrap{}().c_str());
+				}
+
 			}
 			else if (iTolen == sizeof(sockaddr_in6)) {
 				sockaddr_in6* addr = (sockaddr_in6*)lpTo;
 				TCHAR cAddr[46] = { 0 };
 				InetNtop(AF_INET6, &addr->sin6_addr, cAddr, 46);
-				PrintDebugString(_T("Success: %s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
+				PrintDebugString(true, _T("%s.sendto[%s:%d]"), g_szCurrentApp, cAddr, ntohs(addr->sin6_port));
 
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin6_addr;
 				copyData.cbData = sizeof(addr->sin6_addr);
-				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
+				if (0 != SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData)) {
+					PrintDebugString(false, _T("SendMessage：%s"), ErrWrap{}().c_str());
+				}
 			}
 
 			break;
@@ -203,6 +165,13 @@ int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD 
 
 	return g_NextProcTable.lpWSPSendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags,
 		lpTo, iTolen, lpOverlapped, lpCompletionRoutine, lpThreadId, lpErrno);
+}
+
+BOOL CALLBACK EnumThreadWndProc(HWND hwnd, LPARAM lParam)
+{
+	hSenderWnd = hwnd;
+	PrintDebugString(true, _T("在dll中枚举到的窗口句柄：%x"), hSenderWnd);
+	return FALSE;
 }
 
 _Must_inspect_result_ int WSPAPI WSPStartup(
@@ -223,21 +192,25 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
 		PathStripPath(g_szCurrentApp);
 		PathRemoveExtension(g_szCurrentApp);
-		PrintDebugString(_T("Success: %s.%s"), g_szCurrentApp, __FUNC__);
+		PrintDebugString(true, _T("%s.%s"), g_szCurrentApp, __FUNC__);
+		if (lstrcmp(g_szCurrentApp, _T("sender")) == 0) {
+			EnumThreadWindows(GetCurrentThreadId(), EnumThreadWndProc, NULL);
+		}
 	}
 
 	//一次初始化
 	if (!init) {
 		init = true;
+		PrintDebugString(true, _T("szProtocol:%s"), lpProtocolInfo->szProtocol);
 		//从文件加载需要拦截的应用程序
 		TCHAR szCfgFilePath[MAX_PATH];
 		lstrcpy(szCfgFilePath, g_szDllDir);
 		PathAppend(szCfgFilePath, CONFIG_FILE);
-		PrintDebugString(_T("Success: cfgFilePath: %s"), szCfgFilePath);
-		ifstream ifs(szCfgFilePath);
+		PrintDebugString(true, _T("配置文件路径: %s"), szCfgFilePath);
+		tifstream ifs(szCfgFilePath);
 		int i = 0;
 		while (ifs.getline(g_szHookProc[i], MAX_PROC_NAME)) {
-			PrintDebugString(_T("Success: 拦截进程：%s"), g_szHookProc[i]);
+			PrintDebugString(true, _T("拦截进程：%s"), g_szHookProc[i]);
 			i++;
 			if (i >= MAX_PROC_COUNT) {
 				break;
@@ -257,18 +230,17 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		si.dwFlags = STARTF_USESHOWWINDOW;
 		if (!CreateProcess(NULL, szSenderPath, NULL, NULL, FALSE, 0, NULL, g_szDllDir, &si, &pi))
 		{
-			PrintDebugString(_T("Failure: 创建进程%s失败：%d\n"), szSenderPath, GetLastError());
+			PrintDebugString(false, _T("创建进程[%s]失败：%s"), szSenderPath, ErrWrap{}().c_str());
 		}
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
-		Sleep(500);//等注册表写好，也可以等待sender里SetEvent
+		//Sleep(500);//等注册表写好，也可以等待sender里SetEvent
 
 		//从注册表获取sender窗口句柄
-#define KEY_SENDER_HWND _T("hwnd@sender")
-		TCHAR szSenderHwnd[16] = { 0 };
-		_GetEnv(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
+		/*TCHAR szSenderHwnd[16] = { 0 };
+		bool ret = RegWrap{ HKEY_CURRENT_USER, REGDIR_ENV }.get(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
 		_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
-		PrintDebugString(_T("Success: 得到sender的窗口句柄：%x"), hSenderWnd);
+		PrintDebugString(ret, _T("得到sender的窗口句柄：%x"), hSenderWnd);*/
 	}
 
 	// 枚举协议，找到下层协议的WSAPROTOCOL_INFOW结构
@@ -293,7 +265,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	if (!findNext)
 	{
 		FreeProvider(pProtoInfo);
-		PrintDebugString(_T("Failure: %s: Can not find underlying protocol"), __FUNC__);
+		PrintDebugString(false, _T("Can not find underlying protocol"));
 		return WSAEPROVIDERFAILEDINIT;
 	}
 	// 加载下层协议的DLL
@@ -304,14 +276,14 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	if (WSCGetProviderPath(&NextProtocolInfo.ProviderId, szBaseProviderDll, &nLen, &nError) == SOCKET_ERROR)
 	{
 		FreeProvider(pProtoInfo);
-		PrintDebugString(_T("Failure: %s: WSCGetProviderPath() failed %d"), __FUNC__, nError);
+		PrintDebugString(false, _T("%s: WSCGetProviderPath() failed: %s"), __FUNC__, ErrWrap{}(nError).c_str());
 		return WSAEPROVIDERFAILEDINIT;
 	}
 	TCHAR szExpandProviderDll[MAX_PATH] = { 0 };
 	if (!ExpandEnvironmentStrings(szBaseProviderDll, szExpandProviderDll, MAX_PATH))
 	{
 		FreeProvider(pProtoInfo);
-		PrintDebugString(_T("Failure: %s: ExpandEnvironmentStrings() failed %d"), __FUNC__, GetLastError());
+		PrintDebugString(false, _T("%s: ExpandEnvironmentStrings() failed: %s"), __FUNC__, ErrWrap{}().c_str());
 		return WSAEPROVIDERFAILEDINIT;
 	}
 	// 加载下层提供程序
@@ -319,7 +291,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	if (hModule == NULL)
 	{
 		FreeProvider(pProtoInfo);
-		PrintDebugString(_T("Failure: %s: LoadLibrary() failed %d"), __FUNC__, GetLastError());
+		PrintDebugString(false, _T("%s: LoadLibrary() failed %s"), __FUNC__, ErrWrap{}().c_str());
 		return WSAEPROVIDERFAILEDINIT;
 	}
 	// 导入下层提供程序的WSPStartup函数
@@ -327,7 +299,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	if (pfnWSPStartup == NULL)
 	{
 		FreeProvider(pProtoInfo);
-		PrintDebugString(_T("Failure: %s: GetProcAddress() failed %d"), __FUNC__, GetLastError());
+		PrintDebugString(false, _T("%s: GetProcAddress() failed %s"), __FUNC__, ErrWrap{}().c_str());
 		return WSAEPROVIDERFAILEDINIT;
 	}
 	// 调用下层提供程序的WSPStartup函数
@@ -339,7 +311,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	if (nRet != ERROR_SUCCESS)
 	{
 		FreeProvider(pProtoInfo);
-		PrintDebugString(_T("Failure: %s: underlying provider's WSPStartup() failed %d"), __FUNC__, nRet);
+		PrintDebugString(false, _T("%s: underlying provider's WSPStartup() failed %s"), __FUNC__, ErrWrap{}(nRet).c_str());
 		return nRet;
 	}
 

@@ -1,95 +1,31 @@
 ﻿// installer.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
 //
 //#include <afxwin.h>
-#include <iostream>
 #include <fstream>
 #include <sstream>
-#include <Ws2spi.h>
-#include <tchar.h>
+
+#include <Ws2spi.h>//这个头文件有点刺头，很多东西不能放在它前面
 #include <SpOrder.h>
-#include <string>
-#include <vector>
 #include <TlHelp32.h>
-#include <assert.h>
 #include <ShlObj.h>
 #include <Shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
-#pragma comment(lib, "ws2_32.lib")  //加载 ws2_32.dll
+#pragma comment(lib, "ws2_32.lib")
+#include "utils.h"
 
-//自定义宏
-#ifdef UNICODE
-    #define __FUNC__ __FUNCTIONW__
-    #define tstring std::wstring
-    #define to_tstring std::to_wstring
-    #define ifstream std::wifstream
-    #define stringstream std::wstringstream
-#else
-    #define __FUNC__ __FUNCTION__
-    #define tstring std::string
-    #define to_tstring std::to_string
-    #define ifstream std::ifstream
-    #define stringstream std::stringstream
-#endif // UNICODE
 
 #define PAUSE_RETURN system("pause");return 0
-#define LSP_ENTRYID _T("LSP-CatalogEntryId")
-#define LSP_ENTRYID_LEN 8
+#define REGDIR_ENV _T("Environment")
+#define KEY_ENTRYID _T("LSP-CatalogEntryId")
+#define FILE_DLL _T("lsp.dll")
+#define FILE_DLL_CONFIG _T("lsp.config")
+#define FILE_SENDER _T("sender.exe")
+#define FILE_SENDER_CONFIG _T("sender.config")
+#define DIR_SELECT _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\")
 
 
-bool _AddEnv(const TCHAR* key, const TCHAR* value)
-{
-    HKEY hKey;
-    if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, _T("Environment"), 0, KEY_WRITE, &hKey))
-    {
-        if (ERROR_SUCCESS == RegSetValueEx(hKey, key, 0, REG_SZ, (PBYTE)value, sizeof(TCHAR) * lstrlen(value)))
-        {
-            _tprintf_s(_T("成功设置环境变量：%s:%s\n"), key, value);
-            RegCloseKey(hKey);
-            return true;
-        }
-        _tprintf_s(_T("%s.RegSetValueEx(%s:%s): %d\n"), __FUNC__, key, value, GetLastError());
-        RegCloseKey(hKey);
-    }
-    _tprintf_s(_T("%s.RegOpenKeyEx: %d\n"), __FUNC__, GetLastError());
-    return false;
-}
+RegWrap g_Env;
 
-bool _DelEnv(const TCHAR* key)
-{
-    HKEY hKey;
-    if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, _T("Environment"), 0, KEY_WRITE, &hKey))
-    {
-        if (ERROR_SUCCESS == RegDeleteValue(hKey, key))
-        {
-            _tprintf_s(_T("成功删除环境变量：%s\n"), key);
-            RegCloseKey(hKey);
-            return true;
-        }
-        _tprintf_s(_T("%s.RegDeleteValue(%s): %d\n"), __FUNC__, key, GetLastError());
-        RegCloseKey(hKey);
-    }
-    _tprintf_s(_T("%s.RegOpenKeyEx: %d\n"), __FUNC__, GetLastError());
-    return false;
-}
-
-bool _GetEnv(const TCHAR* key, TCHAR* value, DWORD nSize)
-{
-    HKEY hKey;
-    if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, _T("Environment"), 0, KEY_READ, &hKey))
-    {
-        DWORD size = sizeof(TCHAR) * nSize;
-        if (ERROR_SUCCESS == RegQueryValueEx(hKey, key, NULL, NULL, (LPBYTE)value, &size)) 
-        {
-            _tprintf_s(_T("成功获取环境变量：%s:%s\n"), key, value);
-            RegCloseKey(hKey);
-            return true;
-        }
-        _tprintf_s(_T("%s.RegQueryValueEx(%s): %d\n"), __FUNC__, key, GetLastError());
-        RegCloseKey(hKey);
-    }
-    _tprintf_s(_T("%s.RegOpenKeyEx: %d\n"), __FUNC__, GetLastError());//如何将每个api与它的描述字符对应起来
-    return false;
-}
 
 LPWSAPROTOCOL_INFOW GetProvider(LPINT lpTotalProtocols)
 {
@@ -101,6 +37,7 @@ LPWSAPROTOCOL_INFOW GetProvider(LPINT lpTotalProtocols)
     if (WSCEnumProtocols(NULL, pProtoInfo, &dwSize, &nError) == SOCKET_ERROR)
     {
         if (nError != WSAENOBUFS) {
+            PrintDebugString(false, _T("WSCEnumProtocols:%s"), ErrWrap{}(nError).c_str());
             return NULL;
         } 
     }
@@ -189,7 +126,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
     CoCreateGuid(&Layered_guid);
     if (SOCKET_ERROR == WSCInstallProvider(&Layered_guid, wszDllPath, &LayeredProtocolInfo, 1, &nError))
     {
-        _tprintf_s(_T("安装分层协议失败：%d\n"), nError);
+        PrintDebugString(false, _T("安装分层协议失败：%s"), ErrWrap{}(nError).c_str());
         FreeProvider(pProtoInfo);
         return false;
     }
@@ -209,15 +146,13 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
             //取出分层协议的目录入口ID
             dwLayeredCatalogId = pProtoInfo[i].dwCatalogEntryId;
             
-            TCHAR v[LSP_ENTRYID_LEN] = { 0 };
-            _stprintf_s(v, _T("%d"), dwLayeredCatalogId);
-            _tprintf_s(_T("分层协议的目录入口ID：%s\n"), v);
-            _AddEnv(LSP_ENTRYID, v);
+            PrintDebugString(true, _T("分层协议的目录入口ID：%d"), dwLayeredCatalogId);
+            g_Env.set(KEY_ENTRYID, REG_DWORD, &dwLayeredCatalogId, sizeof(dwLayeredCatalogId));
             //取环境变量测试
-            TCHAR test[LSP_ENTRYID_LEN] = { 0 };
-            _GetEnv(LSP_ENTRYID, test, LSP_ENTRYID_LEN);
-            if (lstrcmp(v, test) == 0) {
-                _tprintf_s(_T("写入环境变量成功 [key:%s, value:%s]\n"), LSP_ENTRYID, test);
+            DWORD dwId;
+            g_Env.get(KEY_ENTRYID, &dwId, sizeof(dwId));
+            if (dwId == dwLayeredCatalogId) {
+                PrintDebugString(true, _T("写入环境变量成功 [key:%s, value:%d]"), KEY_ENTRYID, dwId);
             }
             break;
         }
@@ -249,7 +184,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
     CoCreateGuid(&AgreementChain_guid);
     if (SOCKET_ERROR == WSCInstallProvider(&AgreementChain_guid, wszDllPath, OriginalProtocolInfo, nArrayCount, &nError))
     {
-        _tprintf_s(_T("安装协议链失败：%d\n"), nError);
+        PrintDebugString(false, _T("安装协议链失败：%s"), ErrWrap{}(nError).c_str());
         FreeProvider(pProtoInfo);
         return false;
     }
@@ -277,7 +212,9 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
             dwIds[nIndex++] = pProtoInfo[i].dwCatalogEntryId;
     }
     //重新排序Winsock目录
-    if (WSCWriteProviderOrder(dwIds, nIndex) != ERROR_SUCCESS) {
+    int retWSCWriteProviderOrder = WSCWriteProviderOrder(dwIds, nIndex);
+    if (retWSCWriteProviderOrder != ERROR_SUCCESS) {
+        PrintDebugString(false, _T("WSCWriteProviderOrder:%s"), ErrWrap{}(retWSCWriteProviderOrder).c_str());
         FreeProvider(pProtoInfo);
         return false;
     }
@@ -289,7 +226,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
 
 bool RemoveProvider(DWORD dwLayeredCatalogId)
 {
-    _tprintf_s(_T("分层协议入口ID：%d\n"), dwLayeredCatalogId);
+    PrintDebugString(true, _T("分层协议入口ID：%d"), dwLayeredCatalogId);
     LPWSAPROTOCOL_INFOW pProtoInfo = NULL;
     int nProtocols = 0;
     //遍历出所有协议
@@ -309,7 +246,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
         }
     }
     if (i == nProtocols) {
-        _tprintf_s(_T("没有找到相应的分层协议\n"));
+        PrintDebugString(false, _T("没有找到相应的分层协议"));
         return false;
     }
     
@@ -320,7 +257,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
         {   //先卸载协议链
             if (SOCKET_ERROR == WSCDeinstallProvider(&pProtoInfo[i].ProviderId, &nError))
             {
-                _tprintf_s(_T("卸载协议链失败：%d\n"), nError);
+                PrintDebugString(false, _T("卸载协议链失败：%s"), ErrWrap{}(nError).c_str());
                 return false;
             }
             break;
@@ -328,7 +265,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
     }
     if (SOCKET_ERROR == WSCDeinstallProvider(&Layered_guid, &nError))
     {
-        _tprintf_s(_T("卸载分层协议失败：%d\n"), nError);
+        PrintDebugString(false, _T("卸载分层协议失败：%s"), ErrWrap{}(nError).c_str());
         return false;
     }
     return true;
@@ -358,7 +295,7 @@ bool isProcessOpen(const TCHAR* szProc, bool& open)
     HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     
     if (hProcessSnap == INVALID_HANDLE_VALUE) {
-        _tprintf_s(_T("Failure: CreateToolhelp32Snapshot: %d\n"), GetLastError());
+        PrintDebugString(false, _T("CreateToolhelp32Snapshot: %s"), ErrWrap{}().c_str());
         return false;
     }
 
@@ -410,26 +347,28 @@ bool GetUserSelectDir(tstring& res)
     return false;
 }
 
+
 int _tmain(int argc, TCHAR* argv[])
 {
     setlocale(LOCALE_ALL, "chs");
-    
-    _tprintf_s(_T("第零步：获取用户请求\n"));
+    if (!g_Env.open(HKEY_CURRENT_USER, REGDIR_ENV)) {
+        PAUSE_RETURN;
+    }
+    DWORD dwEntryId;
+    bool bGetEntryId = g_Env.get(KEY_ENTRYID, &dwEntryId, sizeof(dwEntryId));
+
+
+    PrintDebugString(true, _T("第零步：获取用户请求"));
     int ans = MessageBox(NULL, _T("安装：是，卸载：否，什么也不做：取消"), _T("提示"), MB_YESNOCANCEL | MB_DEFBUTTON3 | MB_ICONQUESTION);
     if (ans == IDCANCEL) {
         PAUSE_RETURN;
     }
     else if (ans == IDNO) {
-        TCHAR szEntryId[LSP_ENTRYID_LEN];
-        if (!_GetEnv(LSP_ENTRYID, szEntryId, LSP_ENTRYID_LEN)) {
+        if (!bGetEntryId) {
             MessageBox(NULL, _T("已经卸载"), _T("提示"), MB_ICONINFORMATION);
             PAUSE_RETURN;
         }
-        DWORD dwEntryId;
-        _stscanf_s(szEntryId, _T("%d"), &dwEntryId);
-        bool res = RemoveProvider(dwEntryId);
-        if (res) {
-            _DelEnv(LSP_ENTRYID);
+        if (RemoveProvider(dwEntryId) && g_Env.del(KEY_ENTRYID)) {
             MessageBox(NULL, _T("卸载分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
         }
         else {
@@ -439,9 +378,8 @@ int _tmain(int argc, TCHAR* argv[])
     }
     
 
-    _tprintf_s(_T("第一步：检查环境变量[%s]判断是否已经安装\n"), LSP_ENTRYID);
-    TCHAR szEntryId[LSP_ENTRYID_LEN];
-    if (_GetEnv(LSP_ENTRYID, szEntryId, LSP_ENTRYID_LEN)) {
+    PrintDebugString(true, _T("第一步：检查环境变量[%s]判断是否已经安装"), KEY_ENTRYID);
+    if (bGetEntryId) {
         MessageBox(NULL, _T("检测到已经安装，请先卸载"), _T("提示"), MB_ICONINFORMATION);
         PAUSE_RETURN;
     }
@@ -453,14 +391,9 @@ int _tmain(int argc, TCHAR* argv[])
     _tprintf_s(_T("选择安放dll的文件夹：%s\n"), selectDir.c_str());*/
 
 
-#define szDllFile _T("lsp.dll")
-#define szCfgFile _T("lsp.config")
-#define szSenderFile _T("sender.exe")
-#define szIpFile _T("ip.config")
-#define szSelectDir _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\")
-    _tprintf_s(_T("第二步：拷贝dll及其资源到安全目录：%s\n"), szSelectDir);
-    if (!PathIsDirectory(szSelectDir)) {
-        if (!CreateDirectory(szSelectDir, NULL) && GetLastError() == ERROR_PATH_NOT_FOUND) {
+    PrintDebugString(true, _T("第二步：拷贝dll及其资源到安全目录：%s"), DIR_SELECT);
+    if (!PathIsDirectory(DIR_SELECT)) {
+        if (!CreateDirectory(DIR_SELECT, NULL) && GetLastError() == ERROR_PATH_NOT_FOUND) {
             MessageBox(NULL, _T("非统一客户端用户禁止使用"), _T("错误"), MB_ICONWARNING);
             PAUSE_RETURN;
         }
@@ -478,13 +411,13 @@ int _tmain(int argc, TCHAR* argv[])
         }
         return true;
     };
-    tstring strSelectDir = szSelectDir;
-    tstring dstDllFile = strSelectDir + szDllFile;
-    tstring dstCfgFile = strSelectDir + szCfgFile;
-    if (!fnCopyFile(szDllFile, dstDllFile.c_str())
-        || !fnCopyFile(szCfgFile, dstCfgFile.c_str())
-        || !fnCopyFile(szSenderFile, (strSelectDir + szSenderFile).c_str())
-        || !fnCopyFile(szIpFile, (strSelectDir + szIpFile).c_str())
+    tstring strSelectDir = DIR_SELECT;
+    tstring dstDllFile = strSelectDir + FILE_DLL;
+    tstring dstCfgFile = strSelectDir + FILE_DLL_CONFIG;
+    if (!fnCopyFile(FILE_DLL, dstDllFile.c_str())
+        || !fnCopyFile(FILE_DLL_CONFIG, dstCfgFile.c_str())
+        || !fnCopyFile(FILE_SENDER, (strSelectDir + FILE_SENDER).c_str())
+        || !fnCopyFile(FILE_SENDER_CONFIG, (strSelectDir + FILE_SENDER_CONFIG).c_str())
     ) {
         PAUSE_RETURN;
     }
@@ -509,28 +442,31 @@ int _tmain(int argc, TCHAR* argv[])
     }*/
     
     //确保配置文件中的进程已关闭
-    _tprintf_s(_T("安装之前确保配置文件中的进程已关闭\n"));
-    ifstream ifs(dstCfgFile);
-#define MAX_PROC_NAME 16
-    TCHAR szHookProc[MAX_PROC_NAME];
-    stringstream ss;
-    while (ifs.getline(szHookProc, MAX_PROC_NAME)) 
+    PrintDebugString(true, _T("安装之前确保配置文件中的进程已关闭"));
+    tifstream ifs(dstCfgFile);
+    if (ifs.fail()) {
+        PrintDebugString(false, _T("ifs.fail():%s"), ErrWrap{}().c_str());
+        PAUSE_RETURN;
+    }
+    tstringstream ss;
+    tstring strHookProc;
+    while (std::getline(ifs, strHookProc))
     {
         bool open = true;
-        isProcessOpen(szHookProc, open);
+        isProcessOpen(strHookProc.c_str(), open);
         if (open) {
-            ss << _T("请关闭：") << szHookProc << std::endl;
+            ss << _T("请关闭：") << strHookProc << std::endl;
         }
-        ZeroMemory(szHookProc, sizeof(szHookProc));
+        strHookProc.clear();
     }
     ifs.close();
-    _tprintf_s(_T("%s\n"), ss.str().c_str());
+    PrintDebugString(true, ss.str().c_str());
     if (!ss.str().empty()) {
         MessageBox(NULL, _T("请先关闭命令行提示的软件"), _T("提示"), MB_ICONWARNING);
         PAUSE_RETURN;
     }
     
-    _tprintf_s(_T("第三步：安装dll：%s\n"), dstDllFile.c_str());
+    PrintDebugString(true, _T("第三步：安装dll：%s"), dstDllFile.c_str());
     if (InstallProvider(dstDllFile.c_str())) {
         MessageBox(NULL, _T("安装分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
     }

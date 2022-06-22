@@ -3,15 +3,18 @@
 
 #include "framework.h"
 #include "sender.h"
+#include "utils.h"
 #include <WS2tcpip.h>
 #pragma comment(lib,"ws2_32.lib")
 #include <unordered_set>
 #include <codecvt>
+#include <fstream>
 
 
 #define MAX_LOADSTRING 100
-#define STR_HWND_REGKEY _T("hwnd@sender")
-#define STR_IPCFG_FILE _T("ip.config")
+#define FILE_CONFIG _T("sender.config")
+#define REGDIR_ENV _T("Environment")
+#define KEY_HWND _T("hwnd@sender")
 
 
 // 全局变量:
@@ -20,6 +23,8 @@ WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
 std::unordered_set<tstring> ipSet;
+tstring g_strIp;
+int g_iPort;
 SOCKET sock;
 
 
@@ -38,40 +43,24 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     // TODO: 在此处放置代码。
-    // 创建与服务器通信的socket
-    ifstream ifs(STR_IPCFG_FILE);
+    // 从配置文件获取服务器地址
+    tifstream ifs(FILE_CONFIG);
     if (ifs.fail()) {
-        PrintDebugString(false, _T("文件打开失败[file:%s, error:%s]"), STR_IPCFG_FILE, ErrStr().getStr().c_str());
+        PrintDebugString(false, _T("文件打开失败[file:%s, error:%s]"), FILE_CONFIG, ErrWrap{}().c_str());
         return 0;
     }
     tstring strIPort;
     std::getline(ifs, strIPort);
     ifs.close();
-    PrintDebugString(true, _T("从文件中读取的服务器地址[file:%s, addr:%s]"), STR_IPCFG_FILE, strIPort.c_str());
+    PrintDebugString(true, _T("从文件[%s]读取的服务器地址：%s"), FILE_CONFIG, strIPort.c_str());
     size_t segIndex = strIPort.find_first_of(_T(':'));
     if (segIndex == tstring::npos) {
-        PrintDebugString(false, _T("服务器地址没有冒号分隔符"));
+        PrintDebugString(false, _T("服务器地址[%s]没有冒号分隔符"), strIPort.c_str());
         return 0;
     }
-    tstring strIp = strIPort.substr(0, segIndex);
-    tstring strPort = strIPort.substr(segIndex + 1);
-    unsigned int iPort;
-    _stscanf_s(strPort.c_str(), _T("%d"), &iPort);
-
-    WSADATA wsaData;
-    PrintDebugString(true, _T("WSAStartup[ret:%d]"), WSAStartup(MAKEWORD(2, 2), &wsaData));
-    /*WSASYSNOTREADY: The underlying network subsystem is not ready for network communication.
-    WSAVERNOTSUPPORTED: The version of Windows Sockets support requested is not provided by this particular Windows Sockets implementation.
-    WSAEINPROGRESS: A blocking Windows Sockets 1.1 operation is in progress.
-    WSAEPROCLIM: A limit on the number of tasks supported by the Windows Sockets implementation has been reached.
-    WSAEFAULT: The lpWSAData parameter is not a valid pointer.*/
-    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    struct sockaddr_in sockAddr = { 0 };
-    sockAddr.sin_family = AF_INET;
-    InetPton(AF_INET, strIp.c_str(), &sockAddr.sin_addr);
-    sockAddr.sin_port = htons(iPort);
-    connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
-    PrintDebugString(true, _T("连接服务器成功[%s:%d]"), strIp.c_str(), iPort);
+    g_strIp = strIPort.substr(0, segIndex);
+    _stscanf_s(strIPort.substr(segIndex + 1).c_str(), _T("%d"), &g_iPort);
+    PrintDebugString(true, _T("分割后的服务器地址[ip:%s, port:%d]"), g_strIp.c_str(), g_iPort);
 
     // 初始化全局字符串
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -153,13 +142,27 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    //先把窗口句柄存环境变量
    PrintDebugString(true, _T("检查自身窗口句柄：%x"), hWnd);
-
-   TCHAR szHwnd[16];
+   /*TCHAR szHwnd[16];
    _stprintf_s(szHwnd, _T("%x"), hWnd);
-   if (!_AddEnv(STR_HWND_REGKEY, szHwnd)) {
-       PrintDebugString(false, _T("窗口句柄写入环境变量失败：%s"), ErrStr().getStr().c_str());
-   }
+   if (!RegWrap{ HKEY_CURRENT_USER, REGDIR_ENV }.set(KEY_HWND, REG_SZ, szHwnd, sizeof(szHwnd))) {
+       PrintDebugString(false, _T("sender窗口句柄写入环境变量失败：%s"), ErrWrap{}().c_str());
+   }*/
    
+   WSADATA wsaData;
+   PrintDebugString(true, _T("WSAStartup[ret:%d]"), WSAStartup(MAKEWORD(2, 2), &wsaData));
+   /*WSASYSNOTREADY: The underlying network subsystem is not ready for network communication.
+   WSAVERNOTSUPPORTED: The version of Windows Sockets support requested is not provided by this particular Windows Sockets implementation.
+   WSAEINPROGRESS: A blocking Windows Sockets 1.1 operation is in progress.
+   WSAEPROCLIM: A limit on the number of tasks supported by the Windows Sockets implementation has been reached.
+   WSAEFAULT: The lpWSAData parameter is not a valid pointer.*/
+   sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+   struct sockaddr_in sockAddr = { 0 };
+   sockAddr.sin_family = AF_INET;
+   InetPton(AF_INET, g_strIp.c_str(), &sockAddr.sin_addr);
+   sockAddr.sin_port = htons(g_iPort);
+   connect(sock, (SOCKADDR*)&sockAddr, sizeof(SOCKADDR));
+   PrintDebugString(true, _T("连接服务器成功[%s:%d]"), g_strIp.c_str(), g_iPort);
+
    
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -185,7 +188,7 @@ std::string UnicodeToUTF8(const std::wstring& wstr)
         ret = wcv.to_bytes(wstr);
     }
     catch (const std::exception& e) {
-        //std::cerr << e.what() << std::endl;
+        PrintDebugStringA(false, "UnicodeToUTF8: %s", e.what());
     }
     return ret;
 }
@@ -198,7 +201,7 @@ std::wstring UTF8ToUnicode(const std::string& str)
         ret = wcv.from_bytes(str);
     }
     catch (const std::exception& e) {
-        //std::cout << e.what() << std::endl;
+        PrintDebugStringA(false, "UTF8ToUnicode: %s", e.what());
     }
     return ret;
 }
