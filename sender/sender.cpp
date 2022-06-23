@@ -13,8 +13,8 @@
 
 #define MAX_LOADSTRING 100
 #define FILE_CONFIG _T("sender.config")
-#define REGDIR_ENV _T("Environment")
-#define KEY_HWND _T("hwnd@sender")
+//#define REGDIR_ENV _T("Environment")
+//#define KEY_HWND _T("hwnd@sender")
 
 
 // 全局变量:
@@ -43,6 +43,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     // TODO: 在此处放置代码。
+    // 防止多开，节省socket资源，创建全局互斥对象，因为目前需求不需要拦截SYSTEM权限进程
+    HANDLE hMutex = CreateMutex(NULL, FALSE, _T("Global\\防止多开，节省socket资源"));
+    if (!hMutex) {
+        PrintDebugString(false, _T("CreateMutex:%s"), ErrWrap{}().c_str());
+        return 0;
+    }
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        PrintDebugString(false, _T("不能打开多个sender"));
+        CloseHandle(hMutex);
+        return 0;
+    }
+    
     // 从配置文件获取服务器地址
     tifstream ifs(FILE_CONFIG);
     if (ifs.fail()) {
@@ -222,7 +235,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
                 std::string data = UnicodeToUTF8(cAddr).c_str();
-                if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * (data.length() + 1), 0)) {
+                if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * data.length(), 0)) {
                     int errcode = WSAGetLastError();
                     PrintDebugString(false, _T("send函数错误[code:%d, msg:%s]"), errcode, ErrWrap{}(errcode).c_str());
                 }
@@ -240,7 +253,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
                 std::string data = UnicodeToUTF8(cAddr).c_str();
-                if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * (data.length() + 1), 0)) {
+                if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * data.length(), 0)) {
                     int errcode = WSAGetLastError();
                     PrintDebugString(false, _T("send函数错误[code:%d, msg:%s]"), errcode, ErrWrap{}(errcode).c_str());
                 }

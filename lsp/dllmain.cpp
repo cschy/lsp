@@ -15,8 +15,8 @@
 #define MAX_PROC_NAME 16
 #define CONFIG_FILE _T("lsp.config")
 #define SENDER_FILE _T("sender.exe")
-#define REGDIR_ENV _T("Environment")
-#define KEY_SENDER_HWND _T("hwnd@sender")
+//#define REGDIR_ENV _T("Environment")
+//#define KEY_SENDER_HWND _T("hwnd@sender")
 
 
 TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
@@ -28,10 +28,16 @@ TCHAR g_szHookProc[MAX_PROC_COUNT][MAX_PROC_NAME] = { 0 };
 TCHAR g_szDllDir[MAX_PATH] = { 0 };
 unsigned int iCurrentProcNum = 0;
 HWND hSenderWnd = NULL;
-bool init = false;
 #pragma data_seg ()
 #pragma comment (linker, "/section:.shared,rws")
 
+BOOL CALLBACK EnumThreadWndProc(HWND hwnd, LPARAM lParam)
+{
+	//确保sender在载入当前dll之前已创建窗口
+	hSenderWnd = hwnd;
+	PrintDebugString(true, _T("在dll中枚举到的窗口句柄：%x"), hSenderWnd);
+	return FALSE;
+}
 
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
@@ -41,18 +47,52 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
 	case DLL_PROCESS_ATTACH: {
-		////不让烦人的svchost进程加载
-		//TCHAR szCurrentApp[MAX_PATH];
-		//GetModuleFileName(NULL, szCurrentApp, MAX_PATH);
-		//PathStripPath(szCurrentApp);
-		//if (lstrcmp(szCurrentApp, _T("svchost.exe")) == 0) {
-		//	return FALSE;
-		//}
-		
-		//获取dll父目录
+		//资源一次初始化
 		if (g_szDllDir[0] == _T('\0')) {
 			GetModuleFileName(hModule, g_szDllDir, MAX_PATH);
 			PathRemoveFileSpec(g_szDllDir);
+
+			//开启sender进程，尽量让此操作靠前，以确保在拦截ip时已获取sender的窗口句柄
+			TCHAR szSenderPath[MAX_PATH];
+			lstrcpy(szSenderPath, g_szDllDir);
+			PathAppend(szSenderPath, SENDER_FILE);
+			STARTUPINFO si = { 0 };
+			PROCESS_INFORMATION pi = { 0 };
+			si.cb = sizeof(STARTUPINFO);
+			si.wShowWindow = SW_HIDE;
+			si.dwFlags = STARTF_USESHOWWINDOW;
+			if (CreateProcess(NULL, szSenderPath, NULL, NULL, FALSE, 0, NULL, g_szDllDir, &si, &pi))
+			{
+				PrintDebugString(true, _T("创建进程[%s]"), szSenderPath);
+			}
+			else {
+				PrintDebugString(false, _T("创建进程[%s]：%s"), szSenderPath, ErrWrap{}().c_str());
+			}
+			CloseHandle(pi.hProcess);
+			CloseHandle(pi.hThread);
+			//Sleep(500);//等注册表写好，也可以等待sender里SetEvent
+			//从注册表获取sender窗口句柄
+			/*TCHAR szSenderHwnd[16] = { 0 };
+			bool ret = RegWrap{ HKEY_CURRENT_USER, REGDIR_ENV }.get(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
+			_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
+			PrintDebugString(ret, _T("得到sender的窗口句柄：%x"), hSenderWnd);*/
+
+			//从文件加载需要拦截的应用程序
+			TCHAR szCfgFilePath[MAX_PATH];
+			lstrcpy(szCfgFilePath, g_szDllDir);
+			PathAppend(szCfgFilePath, CONFIG_FILE);
+			PrintDebugString(true, _T("配置文件路径: %s"), szCfgFilePath);
+			tifstream ifs(szCfgFilePath);
+			int i = 0;
+			while (ifs.getline(g_szHookProc[i], MAX_PROC_NAME)) {
+				PrintDebugString(true, _T("拦截进程：%s"), g_szHookProc[i]);
+				i++;
+				if (i >= MAX_PROC_COUNT) {
+					break;
+				}
+			}
+			iCurrentProcNum = i;
+			ifs.close();
 		}
 	}
 		break;
@@ -167,13 +207,6 @@ int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD 
 		lpTo, iTolen, lpOverlapped, lpCompletionRoutine, lpThreadId, lpErrno);
 }
 
-BOOL CALLBACK EnumThreadWndProc(HWND hwnd, LPARAM lParam)
-{
-	hSenderWnd = hwnd;
-	PrintDebugString(true, _T("在dll中枚举到的窗口句柄：%x"), hSenderWnd);
-	return FALSE;
-}
-
 _Must_inspect_result_ int WSPAPI WSPStartup(
 	_In_ WORD wVersionRequested,
 	_In_ LPWSPDATA lpWSPData,
@@ -187,60 +220,16 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		return WSAEPROVIDERFAILEDINIT;
 	}
 
-	//获取本进程名
+	//获取本进程名，不将此操作放入dllmain中是因为尽量延后获取窗口句柄的时机，怕attch dll的时机非常靠前
 	if (g_szCurrentApp[0] == _T('\0')) {
 		GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
 		PathStripPath(g_szCurrentApp);
 		PathRemoveExtension(g_szCurrentApp);
-		PrintDebugString(true, _T("%s.%s"), g_szCurrentApp, __FUNC__);
+		PrintDebugString(true, _T("%s.%s, szProtocol:%s"), g_szCurrentApp, __FUNC__, lpProtocolInfo->szProtocol);
 		if (lstrcmp(g_szCurrentApp, _T("sender")) == 0) {
+			//sender的窗口必须在网络操作之前创建好，且属于同一线程
 			EnumThreadWindows(GetCurrentThreadId(), EnumThreadWndProc, NULL);
 		}
-	}
-
-	//一次初始化
-	if (!init) {
-		init = true;
-		PrintDebugString(true, _T("szProtocol:%s"), lpProtocolInfo->szProtocol);
-		//从文件加载需要拦截的应用程序
-		TCHAR szCfgFilePath[MAX_PATH];
-		lstrcpy(szCfgFilePath, g_szDllDir);
-		PathAppend(szCfgFilePath, CONFIG_FILE);
-		PrintDebugString(true, _T("配置文件路径: %s"), szCfgFilePath);
-		tifstream ifs(szCfgFilePath);
-		int i = 0;
-		while (ifs.getline(g_szHookProc[i], MAX_PROC_NAME)) {
-			PrintDebugString(true, _T("拦截进程：%s"), g_szHookProc[i]);
-			i++;
-			if (i >= MAX_PROC_COUNT) {
-				break;
-			}
-		}
-		iCurrentProcNum = i;
-		ifs.close();
-
-		//开启sender进程
-		TCHAR szSenderPath[MAX_PATH];
-		lstrcpy(szSenderPath, g_szDllDir);
-		PathAppend(szSenderPath, SENDER_FILE);
-		STARTUPINFO si = { 0 };
-		PROCESS_INFORMATION pi = { 0 };
-		si.cb = sizeof(STARTUPINFO);
-		si.wShowWindow = SW_HIDE;
-		si.dwFlags = STARTF_USESHOWWINDOW;
-		if (!CreateProcess(NULL, szSenderPath, NULL, NULL, FALSE, 0, NULL, g_szDllDir, &si, &pi))
-		{
-			PrintDebugString(false, _T("创建进程[%s]失败：%s"), szSenderPath, ErrWrap{}().c_str());
-		}
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-		//Sleep(500);//等注册表写好，也可以等待sender里SetEvent
-
-		//从注册表获取sender窗口句柄
-		/*TCHAR szSenderHwnd[16] = { 0 };
-		bool ret = RegWrap{ HKEY_CURRENT_USER, REGDIR_ENV }.get(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
-		_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
-		PrintDebugString(ret, _T("得到sender的窗口句柄：%x"), hSenderWnd);*/
 	}
 
 	// 枚举协议，找到下层协议的WSAPROTOCOL_INFOW结构
