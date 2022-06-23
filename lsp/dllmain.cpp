@@ -141,7 +141,7 @@ int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD 
 				copyData.lpData = &addr->sin_addr;
 				copyData.cbData = sizeof(addr->sin_addr);
 				if (0 != SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData)) {
-					PrintDebugString(false, _T("SendMessage：%s"), ErrWrap{}().c_str());
+					PrintDebugString(false, _T("SendMessage(%x)：%s"), hSenderWnd, ErrWrap{}().c_str());
 				}
 
 			}
@@ -155,7 +155,7 @@ int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD 
 				copyData.lpData = &addr->sin6_addr;
 				copyData.cbData = sizeof(addr->sin6_addr);
 				if (0 != SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData)) {
-					PrintDebugString(false, _T("SendMessage：%s"), ErrWrap{}().c_str());
+					PrintDebugString(false, _T("SendMessage(%x)：%s"), hSenderWnd, ErrWrap{}().c_str());
 				}
 			}
 

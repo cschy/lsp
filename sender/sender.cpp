@@ -221,7 +221,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
-                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(TCHAR) * lstrlen(cAddr), 0);
+                std::string data = UnicodeToUTF8(cAddr).c_str();
+                if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * (data.length() + 1), 0)) {
+                    int errcode = WSAGetLastError();
+                    PrintDebugString(false, _T("send函数错误[code:%d, msg:%s]"), errcode, ErrWrap{}(errcode).c_str());
+                }
                 /*char recvBuf[32];
                 recv(sock, recvBuf, sizeof(recvBuf), 0);
                 PrintDebugString(true, _T("recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
@@ -235,7 +239,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
-                send(sock, UnicodeToUTF8(cAddr).c_str(), sizeof(TCHAR) * lstrlen(cAddr), 0);
+                std::string data = UnicodeToUTF8(cAddr).c_str();
+                if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * (data.length() + 1), 0)) {
+                    int errcode = WSAGetLastError();
+                    PrintDebugString(false, _T("send函数错误[code:%d, msg:%s]"), errcode, ErrWrap{}(errcode).c_str());
+                }
                 /*char recvBuf[32];
                 recv(sock, recvBuf, sizeof(recvBuf), 0);
                 PrintDebugString(true, _T("recv: %s"), UTF8ToUnicode(recvBuf).c_str());*/
