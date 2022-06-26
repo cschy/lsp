@@ -15,8 +15,7 @@
 #define MAX_PROC_NAME 16
 #define CONFIG_FILE _T("lsp.config")
 #define SENDER_FILE _T("sender.exe")
-//#define REGDIR_ENV _T("Environment")
-//#define KEY_SENDER_HWND _T("hwnd@sender")
+#define HWND_ENVKEY _T("hwnd")
 
 
 TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
@@ -31,13 +30,13 @@ HWND hSenderWnd = NULL;
 #pragma data_seg ()
 #pragma comment (linker, "/section:.shared,rws")
 
-BOOL CALLBACK EnumThreadWndProc(HWND hwnd, LPARAM lParam)
-{
-	//确保sender在载入当前dll之前已创建窗口
-	hSenderWnd = hwnd;
-	PrintDebugString(true, _T("在dll中枚举到的窗口句柄：%x"), hSenderWnd);
-	return FALSE;
-}
+//BOOL CALLBACK EnumThreadWndProc(HWND hwnd, LPARAM lParam)
+//{
+//	//确保sender在载入当前dll之前已创建窗口
+//	hSenderWnd = hwnd;
+//	PrintDebugString(true, _T("在dll中枚举到的窗口句柄：%x"), hSenderWnd);
+//	return FALSE;
+//}
 
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
@@ -70,12 +69,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 			}
 			CloseHandle(pi.hProcess);
 			CloseHandle(pi.hThread);
-			//Sleep(500);//等注册表写好，也可以等待sender里SetEvent
-			//从注册表获取sender窗口句柄
-			/*TCHAR szSenderHwnd[16] = { 0 };
-			bool ret = RegWrap{ HKEY_CURRENT_USER, REGDIR_ENV }.get(KEY_SENDER_HWND, szSenderHwnd, sizeof(szSenderHwnd));
-			_stscanf_s(szSenderHwnd, _T("%x"), &hSenderWnd);
-			PrintDebugString(ret, _T("得到sender的窗口句柄：%x"), hSenderWnd);*/
 
 			//从文件加载需要拦截的应用程序
 			TCHAR szCfgFilePath[MAX_PATH];
@@ -223,13 +216,17 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	//获取本进程名，不将此操作放入dllmain中是因为尽量延后获取窗口句柄的时机，怕attch dll的时机非常靠前
 	if (g_szCurrentApp[0] == _T('\0')) {
 		GetModuleFileName(NULL, g_szCurrentApp, MAX_PATH);
+		if (lstrcmp(g_szCurrentApp, (tstring(g_szDllDir)+_T("\\")+SENDER_FILE).c_str()) == 0) {
+			//sender的窗口必须在网络操作之前创建好，且属于同一线程
+			//EnumThreadWindows(GetCurrentThreadId(), EnumThreadWndProc, NULL);
+			TCHAR szHwnd[16];
+			GetEnvironmentVariable(HWND_ENVKEY, szHwnd, 16);
+			_stscanf_s(szHwnd, _T("%x"), &hSenderWnd);
+			PrintDebugString(true, _T("得到sender的窗口句柄：%x"), hSenderWnd);
+		}
 		PathStripPath(g_szCurrentApp);
 		PathRemoveExtension(g_szCurrentApp);
 		PrintDebugString(true, _T("%s.%s, szProtocol:%s"), g_szCurrentApp, __FUNC__, lpProtocolInfo->szProtocol);
-		if (lstrcmp(g_szCurrentApp, _T("sender")) == 0) {
-			//sender的窗口必须在网络操作之前创建好，且属于同一线程
-			EnumThreadWindows(GetCurrentThreadId(), EnumThreadWndProc, NULL);
-		}
 	}
 
 	// 枚举协议，找到下层协议的WSAPROTOCOL_INFOW结构

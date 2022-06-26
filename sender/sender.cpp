@@ -13,8 +13,7 @@
 
 #define MAX_LOADSTRING 100
 #define FILE_CONFIG _T("sender.config")
-//#define REGDIR_ENV _T("Environment")
-//#define KEY_HWND _T("hwnd@sender")
+#define HWND_ENVKEY _T("hwnd")
 
 
 // 全局变量:
@@ -155,12 +154,13 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    //先把窗口句柄存环境变量
    PrintDebugString(true, _T("检查自身窗口句柄：%x"), hWnd);
-   /*TCHAR szHwnd[16];
+   TCHAR szHwnd[16];
    _stprintf_s(szHwnd, _T("%x"), hWnd);
-   if (!RegWrap{ HKEY_CURRENT_USER, REGDIR_ENV }.set(KEY_HWND, REG_SZ, szHwnd, sizeof(szHwnd))) {
+   if (SetEnvironmentVariable(HWND_ENVKEY, szHwnd) == 0) {
        PrintDebugString(false, _T("sender窗口句柄写入环境变量失败：%s"), ErrWrap{}().c_str());
-   }*/
-   
+   }
+
+   //连接服务器
    WSADATA wsaData;
    PrintDebugString(true, _T("WSAStartup[ret:%d]"), WSAStartup(MAKEWORD(2, 2), &wsaData));
    /*WSASYSNOTREADY: The underlying network subsystem is not ready for network communication.
