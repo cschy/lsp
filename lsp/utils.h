@@ -91,16 +91,30 @@ void PrintDebugStringA(bool flag, LPCSTR lpszFmt, ...)
 
 class ErrWrap {
 private:
-	TCHAR pszError[95];
+	TCHAR* szMsgBuf;
 public:
-	tstring operator()(int num = 0) {
-		if (num == 0) {
-			_tcserror_s(pszError, errno);
+	~ErrWrap() {
+		LocalFree(szMsgBuf);
+	}
+	tstring operator()(int num = GetLastError()) {
+		tstring ret = to_tstring(num) + _T(":");
+		if (FormatMessage(
+			FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			num,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			(LPTSTR)&szMsgBuf,
+			0, NULL)) {
+			ret.append(szMsgBuf);
 		}
 		else {
-			_tcserror_s(pszError, num);
+			TCHAR szFormatError[32];
+			_stprintf_s(szFormatError, _T("FormatMessage Error:%d"), GetLastError());
+			ret.append(szFormatError);
 		}
-		return pszError;
+		return ret;
 	}
 };
 

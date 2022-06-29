@@ -6,17 +6,17 @@
 
 //×Ô¶¨Òåºê
 #ifdef UNICODE
-	#define __FUNC__ __FUNCTIONW__
-	#define tstring std::wstring
-	#define to_tstring std::to_wstring
-	#define tifstream std::wifstream
-	#define tstringstream std::wstringstream
+#define __FUNC__ __FUNCTIONW__
+#define tstring std::wstring
+#define to_tstring std::to_wstring
+#define tifstream std::wifstream
+#define tstringstream std::wstringstream
 #else
-	#define __FUNC__ __FUNCTION__
-	#define tstring std::string
-	#define to_tstring std::to_string
-	#define tifstream std::ifstream
-	#define tstringstream std::stringstream
+#define __FUNC__ __FUNCTION__
+#define tstring std::string
+#define to_tstring std::to_string
+#define tifstream std::ifstream
+#define tstringstream std::stringstream
 #endif // UNICODE
 
 void PrintDebugString(bool flag, LPCTSTR lpszFmt, ...)
@@ -91,16 +91,30 @@ void PrintDebugStringA(bool flag, LPCSTR lpszFmt, ...)
 
 class ErrWrap {
 private:
-	TCHAR pszError[95];
+	TCHAR* szMsgBuf;
 public:
-	tstring operator()(int num = 0) {
-		if (num == 0) {
-			_tcserror_s(pszError, errno);
+	~ErrWrap() {
+		LocalFree(szMsgBuf);
+	}
+	tstring operator()(int num = GetLastError()) {
+		tstring ret = to_tstring(num) + _T(":");
+		if (FormatMessage(
+			FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			num,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			(LPTSTR)&szMsgBuf,
+			0, NULL)) {
+			ret.append(szMsgBuf);
 		}
 		else {
-			_tcserror_s(pszError, num);
+			TCHAR szFormatError[32];
+			_stprintf_s(szFormatError, _T("FormatMessage Error:%d"), GetLastError());
+			ret.append(szFormatError);
 		}
-		return pszError;
+		return ret;
 	}
 };
 
@@ -124,10 +138,10 @@ public:
 		if (ret != ERROR_SUCCESS) {
 			PrintDebugString(false, _T("RegOpenKeyEx(%x,%s):%s"), hKeyRoot, szDir, ErrWrap{}(ret).c_str());
 			return false;
-//#define HKEY_CLASSES_ROOT                   (( HKEY ) (ULONG_PTR)((LONG)0x80000000) )
-//#define HKEY_CURRENT_USER                   (( HKEY ) (ULONG_PTR)((LONG)0x80000001) )
-//#define HKEY_LOCAL_MACHINE                  (( HKEY ) (ULONG_PTR)((LONG)0x80000002) )
-//#define HKEY_USERS                          (( HKEY ) (ULONG_PTR)((LONG)0x80000003) )
+			//#define HKEY_CLASSES_ROOT                   (( HKEY ) (ULONG_PTR)((LONG)0x80000000) )
+			//#define HKEY_CURRENT_USER                   (( HKEY ) (ULONG_PTR)((LONG)0x80000001) )
+			//#define HKEY_LOCAL_MACHINE                  (( HKEY ) (ULONG_PTR)((LONG)0x80000002) )
+			//#define HKEY_USERS                          (( HKEY ) (ULONG_PTR)((LONG)0x80000003) )
 		}
 		PrintDebugString(true, _T("this(%p)->RegOpenKeyEx(%x,%s)"), this, hKeyRoot, szDir);
 		return true;
@@ -136,21 +150,21 @@ public:
 		LSTATUS ret = RegSetValueEx(hKey, key, 0, dwType, (BYTE*)value, cbData);
 		if (ret != ERROR_SUCCESS) {
 			PrintDebugString(false, _T("this(%p)->RegSetValueEx(%s,%d,%d):%s"), this, key, dwType, cbData, ErrWrap{}(ret).c_str());
-//#define REG_NONE                    ( 0ul ) // No value type
-//#define REG_SZ                      ( 1ul ) // Unicode nul terminated string
-//#define REG_EXPAND_SZ               ( 2ul ) // Unicode nul terminated string
-//			// (with environment variable references)
-//#define REG_BINARY                  ( 3ul ) // Free form binary
-//#define REG_DWORD                   ( 4ul ) // 32-bit number
-//#define REG_DWORD_LITTLE_ENDIAN     ( 4ul ) // 32-bit number (same as REG_DWORD)
-//#define REG_DWORD_BIG_ENDIAN        ( 5ul ) // 32-bit number
-//#define REG_LINK                    ( 6ul ) // Symbolic Link (unicode)
-//#define REG_MULTI_SZ                ( 7ul ) // Multiple Unicode strings
-//#define REG_RESOURCE_LIST           ( 8ul ) // Resource list in the resource map
-//#define REG_FULL_RESOURCE_DESCRIPTOR ( 9ul ) // Resource list in the hardware description
-//#define REG_RESOURCE_REQUIREMENTS_LIST ( 10ul )
-//#define REG_QWORD                   ( 11ul ) // 64-bit number
-//#define REG_QWORD_LITTLE_ENDIAN     ( 11ul ) // 64-bit number (same as REG_QWORD)
+			//#define REG_NONE                    ( 0ul ) // No value type
+			//#define REG_SZ                      ( 1ul ) // Unicode nul terminated string
+			//#define REG_EXPAND_SZ               ( 2ul ) // Unicode nul terminated string
+			//			// (with environment variable references)
+			//#define REG_BINARY                  ( 3ul ) // Free form binary
+			//#define REG_DWORD                   ( 4ul ) // 32-bit number
+			//#define REG_DWORD_LITTLE_ENDIAN     ( 4ul ) // 32-bit number (same as REG_DWORD)
+			//#define REG_DWORD_BIG_ENDIAN        ( 5ul ) // 32-bit number
+			//#define REG_LINK                    ( 6ul ) // Symbolic Link (unicode)
+			//#define REG_MULTI_SZ                ( 7ul ) // Multiple Unicode strings
+			//#define REG_RESOURCE_LIST           ( 8ul ) // Resource list in the resource map
+			//#define REG_FULL_RESOURCE_DESCRIPTOR ( 9ul ) // Resource list in the hardware description
+			//#define REG_RESOURCE_REQUIREMENTS_LIST ( 10ul )
+			//#define REG_QWORD                   ( 11ul ) // 64-bit number
+			//#define REG_QWORD_LITTLE_ENDIAN     ( 11ul ) // 64-bit number (same as REG_QWORD)
 			return false;
 		}
 		return true;
