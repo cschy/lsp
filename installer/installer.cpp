@@ -467,7 +467,12 @@ int _tmain(int argc, TCHAR* argv[])
         int ans = MessageBox(NULL, _T("必须先关闭命令行提示的通讯软件，自动关闭？"), _T("提示"), MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2);
         if (ans == IDYES) {
             for (auto& i : g_hookPe32) {
-                PrintDebugString(true, _T("测试关闭%s:%d"), i.szExeFile, TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, i.th32ProcessID), 0));
+                BOOL res = TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, i.th32ProcessID), 0);
+                PrintDebugString(true, _T("测试关闭%s:%d"), i.szExeFile, res);
+                if (!res) {
+                    PrintDebugString(false, _T("关闭%s失败:%s"), i.szExeFile, ErrWrap{}().c_str());
+                    PAUSE_RETURN;
+                }
             }
         }
         else {
