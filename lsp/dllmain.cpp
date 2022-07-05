@@ -16,16 +16,19 @@
 #define CONFIG_FILE _T("lsp.config")
 #define SENDER_FILE _T("sender.exe")
 #define HWND_ENVKEY _T("hwnd")
+#define EVENT_UNLOADLL _T("Global\\EVENT_UNLOAD_LSPDLL")
 
 
 TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
 WSPPROC_TABLE g_NextProcTable;				//下层函数列表
+HMODULE g_hModlue;
 
 
 #pragma data_seg (".shared")
 TCHAR g_szHookProc[MAX_PROC_COUNT][MAX_PROC_NAME] = { 0 };
 TCHAR g_szDllDir[MAX_PATH] = { 0 };
 unsigned int iCurrentProcNum = 0;
+unsigned int iCurrentInject = 0;
 HWND hSenderWnd = NULL;
 #pragma data_seg ()
 #pragma comment (linker, "/section:.shared,rws")
@@ -46,7 +49,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
 	case DLL_PROCESS_ATTACH: {
-		//资源一次初始化
+		DisableThreadLibraryCalls(hModule);
+		g_hModlue = hModule;
+		++iCurrentInject;
+		//共享资源一次初始化
 		if (g_szDllDir[0] == _T('\0')) {
 			GetModuleFileName(hModule, g_szDllDir, MAX_PATH);
 			PathRemoveFileSpec(g_szDllDir);
@@ -91,8 +97,16 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
+		break;
     case DLL_PROCESS_DETACH:
-        break;
+		PrintDebugString(true, _T("进程%s卸载lsp.dll，当前注入进程数:%d"), g_szCurrentApp, --iCurrentInject);
+		TCHAR path[MAX_PATH];
+		GetModuleFileName(NULL, path, MAX_PATH);
+		if (lstrcmp(path, _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\sender.exe")) == 0)
+		{
+			ExitProcess(0);
+		}
+		break;
     }
     return TRUE;
 }
@@ -200,6 +214,20 @@ int WSPAPI WSPSendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD 
 		lpTo, iTolen, lpOverlapped, lpCompletionRoutine, lpThreadId, lpErrno);
 }
 
+DWORD WINAPI ThreadFun(LPVOID lpThreadParameter)
+{
+	if (lpThreadParameter) {
+		WaitForSingleObject(lpThreadParameter, INFINITE);
+		CloseHandle(lpThreadParameter);
+		PrintDebugString(true, _T("测试%s卸载lsp.dll"), g_szCurrentApp);
+		FreeLibraryAndExitThread(g_hModlue, 0);
+	}
+	else {
+		PrintDebugString(false, _T("创建%s监听lsp.dll退出事件:%s"), g_szCurrentApp, ErrWrap{}().c_str());
+	}
+	return 0;
+}
+
 _Must_inspect_result_ int WSPAPI WSPStartup(
 	_In_ WORD wVersionRequested,
 	_In_ LPWSPDATA lpWSPData,
@@ -227,6 +255,23 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		PathStripPath(g_szCurrentApp);
 		PathRemoveExtension(g_szCurrentApp);
 		PrintDebugString(true, _T("%s.%s, szProtocol:%s"), g_szCurrentApp, __FUNC__, lpProtocolInfo->szProtocol);
+
+		//
+		SECURITY_ATTRIBUTES sa;
+		SECURITY_DESCRIPTOR sd;
+		InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+		SetSecurityDescriptorDacl(&sd, TRUE, NULL, FALSE);
+		sa.lpSecurityDescriptor = &sd;
+		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+		sa.bInheritHandle = FALSE;
+		HANDLE hThread = CreateThread(NULL, 0, ThreadFun, CreateEvent(&sa, TRUE, FALSE, EVENT_UNLOADLL), 0, NULL);
+		if (hThread) {
+			CloseHandle(hThread);
+			PrintDebugString(true, _T("为%s退出lsp.dll创建监听事件线程, 当前注入进程数:%d"), g_szCurrentApp, iCurrentInject);
+		}
+		else {
+			PrintDebugString(false, _T("为%s退出lsp.dll创建监听事件线程:%s"), g_szCurrentApp, ErrWrap{}().c_str());
+		}
 	}
 
 	// 枚举协议，找到下层协议的WSAPROTOCOL_INFOW结构

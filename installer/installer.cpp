@@ -22,6 +22,7 @@
 #define FILE_SENDER _T("sender.exe")
 #define FILE_SENDER_CONFIG _T("sender.config")
 #define DIR_SELECT _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\")
+#define EVENT_UNLOADLL _T("Global\\EVENT_UNLOAD_LSPDLL")
 
 
 RegWrap g_Env;
@@ -369,6 +370,7 @@ int _tmain(int argc, TCHAR* argv[])
             PAUSE_RETURN;
         }
         if (RemoveProvider(dwEntryId) && g_Env.del(KEY_ENTRYID)) {
+            PrintDebugString(true, _T("设置退出lsp.dll事件:%d"), SetEvent(OpenEvent(EVENT_ALL_ACCESS, FALSE, EVENT_UNLOADLL)));
             MessageBox(NULL, _T("卸载分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
         }
         else {
