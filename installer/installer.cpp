@@ -407,7 +407,7 @@ int _tmain(int argc, TCHAR* argv[])
         PathAppend(srcFilePath, file);
 
         if (!CopyFile(srcFilePath, dstFilePath, FALSE)) {
-            PrintDebugString(false, _T("CopyFile失败[src:%s, dst:%s, msg:%s]"), GetLastError(), srcFilePath, dstFilePath, ErrWrap{}().c_str());
+            PrintDebugString(false, _T("CopyFile失败[src:%s, dst:%s, msg:%s]"), srcFilePath, dstFilePath, ErrWrap{}().c_str());
             return false;
         }
         return true;
