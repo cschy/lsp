@@ -22,6 +22,7 @@
 TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
 WSPPROC_TABLE g_NextProcTable;				//下层函数列表
 HMODULE g_hModlue;
+LPWSPPROC_TABLE g_lpProcTable;
 
 
 #pragma data_seg (".shared")
@@ -99,7 +100,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     case DLL_THREAD_DETACH:
 		break;
     case DLL_PROCESS_DETACH:
-		PrintDebugString(true, _T("进程%s卸载lsp.dll，当前注入进程数:%d"), g_szCurrentApp, --iCurrentInject);
+		PrintDebugString(true, _T("卸载lsp.dll[进程%s, 当前注入进程数:%d, lpProcTable:%x]"), g_szCurrentApp, --iCurrentInject, g_lpProcTable);
+		g_lpProcTable->lpWSPConnect = g_NextProcTable.lpWSPConnect;
+		g_lpProcTable->lpWSPSendTo = g_NextProcTable.lpWSPSendTo;
 		TCHAR path[MAX_PATH];
 		GetModuleFileName(NULL, path, MAX_PATH);
 		if (lstrcmp(path, _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\sender.exe")) == 0)
@@ -254,7 +257,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 		}
 		PathStripPath(g_szCurrentApp);
 		PathRemoveExtension(g_szCurrentApp);
-		PrintDebugString(true, _T("%s.%s, szProtocol:%s"), g_szCurrentApp, __FUNC__, lpProtocolInfo->szProtocol);
+		PrintDebugString(true, _T("%s.%s, szProtocol:%s, lpProcTable:%x"), g_szCurrentApp, __FUNC__, lpProtocolInfo->szProtocol, lpProcTable);
 
 		//
 		SECURITY_ATTRIBUTES sa;
@@ -352,6 +355,7 @@ _Must_inspect_result_ int WSPAPI WSPStartup(
 	// 传给上层，截获对以下函数的调用
 	lpProcTable->lpWSPConnect = WSPConnect;
 	lpProcTable->lpWSPSendTo = WSPSendTo;
+	g_lpProcTable = lpProcTable;
 
 	FreeProvider(pProtoInfo);
 	return nRet;

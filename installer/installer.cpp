@@ -3,6 +3,7 @@
 //#include <afxwin.h>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include <Ws2spi.h>//这个头文件有点刺头，很多东西不能放在它前面
 #include <SpOrder.h>
@@ -26,6 +27,7 @@
 
 
 RegWrap g_Env;
+std::vector<PROCESSENTRY32> g_hookPe32;
 
 
 LPWSAPROTOCOL_INFOW GetProvider(LPINT lpTotalProtocols)
@@ -289,7 +291,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
 //    }
 //}
 
-bool isProcessOpen(const TCHAR* szProc, bool& open)
+void CheckProcessOpen(const TCHAR* szProc, std::vector<PROCESSENTRY32>& vec_pe32)
 {
     PROCESSENTRY32 pe32;
     pe32.dwSize = sizeof(PROCESSENTRY32);
@@ -297,23 +299,20 @@ bool isProcessOpen(const TCHAR* szProc, bool& open)
     
     if (hProcessSnap == INVALID_HANDLE_VALUE) {
         PrintDebugString(false, _T("CreateToolhelp32Snapshot: %s"), ErrWrap{}().c_str());
-        return false;
+        return;
     }
 
-    bool find = false;
     BOOL bMore = Process32First(hProcessSnap, &pe32);
     while (bMore) 
     {
         PathRemoveExtension(pe32.szExeFile);
         if (lstrcmp(pe32.szExeFile, szProc) == 0) {
-            find = true;
+            vec_pe32.emplace_back(pe32);
             break;
         }
         bMore = Process32Next(hProcessSnap, &pe32);
     }
-    open = find;
     CloseHandle(hProcessSnap);
-    return true;
 }
 
 bool GetUserSelectDir(tstring& res)
@@ -408,7 +407,7 @@ int _tmain(int argc, TCHAR* argv[])
         PathAppend(srcFilePath, file);
 
         if (!CopyFile(srcFilePath, dstFilePath, FALSE)) {
-            _tprintf_s(_T("CopyFile失败：%d[src:%s, dst:%s]\n"), GetLastError(), srcFilePath, dstFilePath);
+            PrintDebugString(false, _T("CopyFile失败[src:%s, dst:%s, msg:%s]"), GetLastError(), srcFilePath, dstFilePath, ErrWrap{}().c_str());
             return false;
         }
         return true;
@@ -454,18 +453,26 @@ int _tmain(int argc, TCHAR* argv[])
     tstring strHookProc;
     while (std::getline(ifs, strHookProc))
     {
-        bool open = true;
-        isProcessOpen(strHookProc.c_str(), open);
-        if (open) {
-            ss << _T("请关闭：") << strHookProc << std::endl;
-        }
+        CheckProcessOpen(strHookProc.c_str(), g_hookPe32);
         strHookProc.clear();
     }
     ifs.close();
-    PrintDebugString(true, ss.str().c_str());
+    for (auto& i : g_hookPe32) {
+        ss.clear();
+        ss.str(_T(""));
+        ss << _T("请关闭：") << i.szExeFile;
+        PrintDebugString(true, ss.str().c_str());
+    }
     if (!ss.str().empty()) {
-        MessageBox(NULL, _T("请先关闭命令行提示的软件"), _T("提示"), MB_ICONWARNING);
-        PAUSE_RETURN;
+        int ans = MessageBox(NULL, _T("必须先关闭命令行提示的通讯软件，自动关闭？"), _T("提示"), MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2);
+        if (ans == IDYES) {
+            for (auto& i : g_hookPe32) {
+                PrintDebugString(true, _T("测试关闭%s:%d"), i.szExeFile, TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, i.th32ProcessID), 0));
+            }
+        }
+        else {
+            PAUSE_RETURN;
+        }
     }
     
     PrintDebugString(true, _T("第三步：安装dll：%s"), dstDllFile.c_str());
