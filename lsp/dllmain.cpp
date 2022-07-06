@@ -101,8 +101,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		break;
     case DLL_PROCESS_DETACH:
 		PrintDebugString(true, _T("卸载lsp.dll[进程%s, 当前注入进程数:%d, lpProcTable:%x]"), g_szCurrentApp, --iCurrentInject, g_lpProcTable);
-		g_lpProcTable->lpWSPConnect = g_NextProcTable.lpWSPConnect;
-		g_lpProcTable->lpWSPSendTo = g_NextProcTable.lpWSPSendTo;
 		TCHAR path[MAX_PATH];
 		GetModuleFileName(NULL, path, MAX_PATH);
 		if (lstrcmp(path, _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\sender.exe")) == 0)
@@ -223,6 +221,9 @@ DWORD WINAPI ThreadFun(LPVOID lpThreadParameter)
 		WaitForSingleObject(lpThreadParameter, INFINITE);
 		CloseHandle(lpThreadParameter);
 		PrintDebugString(true, _T("测试%s卸载lsp.dll"), g_szCurrentApp);
+
+		g_lpProcTable->lpWSPConnect = g_NextProcTable.lpWSPConnect;
+		g_lpProcTable->lpWSPSendTo = g_NextProcTable.lpWSPSendTo;
 		FreeLibraryAndExitThread(g_hModlue, 0);
 	}
 	else {
