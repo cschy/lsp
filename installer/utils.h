@@ -4,117 +4,116 @@
 #include <tchar.h>
 #include <string>
 
-//自定义宏
-#ifdef UNICODE
-#define __FUNC__ __FUNCTIONW__
-#define tstring std::wstring
-#define to_tstring std::to_wstring
-#define tifstream std::wifstream
-#define tstringstream std::wstringstream
-#else
-#define __FUNC__ __FUNCTION__
-#define tstring std::string
-#define to_tstring std::to_string
-#define tifstream std::ifstream
-#define tstringstream std::stringstream
-#endif // UNICODE
-
-void PrintDebugString(bool flag, LPCTSTR lpszFmt, ...)
+void print(std::wstring_view str)
 {
-#define FLAG_YES _T("Success: ")
-#define FLAG_BAD _T("Failure: ")
-	const tstring strFlag{ flag ? FLAG_YES : FLAG_BAD };
-
-	va_list args;
-	va_start(args, lpszFmt);
-	int len = _vsctprintf(lpszFmt, args) + 2 + strFlag.length();
-	TCHAR* lpszBuf = (TCHAR*)_malloca(len * sizeof(TCHAR));//栈中分配, 不需要释放
-	if (lpszBuf == NULL) {
-		_tprintf_s((tstring(FLAG_BAD) + _T("_malloca lpszBuf NULL\n")).c_str());
-		OutputDebugString((tstring(FLAG_BAD) + _T("_malloca lpszBuf NULL\n")).c_str());
-		return;
-	}
-	lstrcpy(lpszBuf, strFlag.c_str());
-	_vstprintf_s(lpszBuf + strFlag.length(), len - strFlag.length(), lpszFmt, args);
-	va_end(args);
-
-	lpszBuf[len - 2] = _T('\n');
-	lpszBuf[len - 1] = _T('\0');
 #ifdef _CONSOLE
-	if (IsWindowVisible(GetConsoleWindow())) {
-		_tprintf_s(lpszBuf);
-	}
-	else {
-		OutputDebugString(lpszBuf);
-	}
+	WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), str.data(), str.length(), NULL, NULL);
 #else
-	OutputDebugString(lpszBuf);
-#endif // _CONSOLE
-#undef FLAG_BAD
-#undef FLAG_YES
+	OutputDebugStringW(str.data());
+#endif
 }
 
-void PrintDebugStringA(bool flag, LPCSTR lpszFmt, ...)
+std::wstring format(const wchar_t* szFmt, ...)
 {
-#define FLAG_YES "Success: "
-#define FLAG_BAD "Failure: "
-	const std::string strFlag{ flag ? FLAG_YES : FLAG_BAD };
-
 	va_list args;
-	va_start(args, lpszFmt);
-	int len = _vscprintf(lpszFmt, args) + 2 + strFlag.length();
-	char* lpszBuf = (char*)_malloca(len * sizeof(char));//栈中分配, 不需要释放
-	if (lpszBuf == NULL) {
-		printf((std::string(FLAG_BAD) + "_malloca lpszBuf NULL\n").c_str());
-		OutputDebugStringA((std::string(FLAG_BAD) + "_malloca lpszBuf NULL\n").c_str());
+	va_start(args, szFmt);
+	int len = _vscwprintf(szFmt, args) + 1;
+	wchar_t* szBuf = (wchar_t*)_malloca(len * sizeof(wchar_t));
+	/*if (szBuf == nullptr) [[unlikely]] {
+		print(L"false: _malloca error\n");
 		return;
-	}
-	lstrcpyA(lpszBuf, strFlag.c_str());
-	vsprintf_s(lpszBuf + strFlag.length(), len - strFlag.length(), lpszFmt, args);
+	}*/
+	vswprintf_s(szBuf, len, szFmt, args);
 	va_end(args);
-	lpszBuf[len - 2] = '\n';
-	lpszBuf[len - 1] = '\0';
-
-#ifdef _CONSOLE
-	if (IsWindowVisible(GetConsoleWindow())) {
-		printf(lpszBuf);
-	}
-	else {
-		OutputDebugStringA(lpszBuf);
-	}
-#else
-	OutputDebugStringA(lpszBuf);
-#endif // _CONSOLE
-#undef FLAG_BAD
-#undef FLAG_YES
+	std::wstring ret{ szBuf };
+	_freea(szBuf);
+	return ret;
 }
 
-class ErrWrap {
-private:
-	TCHAR* szMsgBuf;
+#define DbgPrintVar(flag, var) print(format(L###flag": %s\n", var))
+#define DbgPrint(flag, fmt, ...) print(format(L###flag": "##fmt"\n", ##__VA_ARGS__))
+#define _Macro_get_funame(expr)\
+	constexpr std::wstring_view __fn_full{ L#expr };\
+	constexpr size_t __pos_bracket{ __fn_full.find_first_of(L'(') };\
+	static_assert(__pos_bracket != std::wstring_view::npos);\
+	constexpr std::wstring_view __fname{ __fn_full.substr(0, __pos_bracket) };
+#define _Macro_dbgprint(fname, code) {\
+	constexpr std::wstring_view __file{ std::wstring_view{__FILEW__}.substr(std::wstring_view{__FILEW__}.find_last_of('\\') + 1) };\
+	DbgPrint(false, "[%s:%s:%d:%s]: %s", __file.data(), __FUNCTIONW__, __LINE__, fname, ErrorString{ code });\
+	static_assert(__file != __FILEW__);\
+}
+#define _Macro_error_object(fn, handler) {\
+	_Macro_get_funame(fn);\
+	auto [res, code] = fn;\
+	if (!res) {\
+		_Macro_dbgprint(__fname.data(), code);\
+		handler;\
+	}\
+}
+#define _Macro_error_native(err_cond, code, handler){\
+	_Macro_get_funame(err_cond);\
+	constexpr std::string_view __cond{ #err_cond };\
+	constexpr size_t __pos_eq{ __cond.find_last_of('=') };\
+	static_assert(__pos_eq != std::string_view::npos\
+	&& (__cond[__pos_eq - 1] == '!' || __cond[__pos_eq - 1] == '=')\
+	&& __fname.find(L'=') == std::wstring_view::npos);\
+	if (err_cond) {\
+		_Macro_dbgprint(__fname.data(), code); \
+		handler; \
+	}\
+}
+#define _Macro_expand(x) x
+#define _Macro_fun(_1, _2, _3, name, ...) name 
+#define M_ErrHand(...) _Macro_expand(_Macro_fun(__VA_ARGS__, _Macro_error_native, _Macro_error_object)(__VA_ARGS__))
+
+class ErrorString {
 public:
-	~ErrWrap() {
-		LocalFree(szMsgBuf);
+	wchar_t* szMsgBuf{ nullptr };//为了格式化打印，只能有这一个数据成员，后续数据成员会占用后面的格式化符号
+public:
+	ErrorString(std::wstring_view str) {
+		szMsgBuf = (wchar_t*)LocalAlloc(LPTR, sizeof(wchar_t) * (str.length() + 1));
+		lstrcpyW(szMsgBuf, str.data());
 	}
-	tstring operator()(int num = GetLastError()) {
-		tstring ret = to_tstring(num) + _T(":");
-		if (FormatMessage(
+	ErrorString(int num) {
+		if (!FormatMessageW(
 			FORMAT_MESSAGE_ALLOCATE_BUFFER |
 			FORMAT_MESSAGE_FROM_SYSTEM |
 			FORMAT_MESSAGE_IGNORE_INSERTS,
 			NULL,
 			num,
 			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-			(LPTSTR)&szMsgBuf,
-			0, NULL)) {
-			ret.append(szMsgBuf);
+			(LPWSTR)&szMsgBuf,
+			0, NULL))
+		{
+			auto str{ format(L"Can't FormatMessage %d error: %d", num, GetLastError()) };
+			szMsgBuf = (wchar_t*)LocalAlloc(LPTR, sizeof(wchar_t) * (str.length() + 1));
+			lstrcpyW(szMsgBuf, str.c_str());
 		}
-		else {
-			TCHAR szFormatError[32];
-			_stprintf_s(szFormatError, _T("FormatMessage Error:%d"), GetLastError());
-			ret.append(szFormatError);
+	}
+	ErrorString(DWORD num = GetLastError()) {
+		if (!FormatMessageW(
+			FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			num,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			(LPWSTR)&szMsgBuf,
+			0, NULL))
+		{
+			auto str{ format(L"Can't FormatMessage %d error: %d", num, GetLastError()) };
+			szMsgBuf = (wchar_t*)LocalAlloc(LPTR, sizeof(wchar_t) * (str.length() + 1));
+			lstrcpyW(szMsgBuf, str.c_str());
 		}
-		return ret;
+	}
+	~ErrorString() {
+		LocalFree(szMsgBuf);
+	}
+	operator const wchar_t* () {
+		return szMsgBuf ? szMsgBuf : L"ErrorString() Error";
+	}
+	const wchar_t* get_cstr() {
+		return szMsgBuf ? szMsgBuf : L"ErrorString() Error";
 	}
 };
 
@@ -122,67 +121,55 @@ class RegWrap {
 private:
 	HKEY hKey;
 public:
-	RegWrap() = default;
-	RegWrap(HKEY hKeyRoot, const TCHAR* szDir) {
-		LSTATUS ret = RegOpenKeyEx(hKeyRoot, szDir, 0, KEY_ALL_ACCESS, &hKey);
-		if (ret != ERROR_SUCCESS) {
-			PrintDebugString(false, _T("RegOpenKeyEx(%x,%s):%s"), hKeyRoot, szDir, ErrWrap{}(ret).c_str());
+	struct Result {
+		bool res;
+		int code;
+		operator bool() {
+			return res;
 		}
-		PrintDebugString(true, _T("this(%p)->RegOpenKeyEx(%x,%s)"), this, hKeyRoot, szDir);
+	};
+	RegWrap() = default;
+	RegWrap(HKEY hKeyRoot, const wchar_t* szDir) {
+		open(hKeyRoot, szDir);
 	}
 	~RegWrap() {
 		RegCloseKey(hKey);
 	}
-	bool open(HKEY hKeyRoot, const TCHAR* szDir) {
-		LSTATUS ret = RegOpenKeyEx(hKeyRoot, szDir, 0, KEY_ALL_ACCESS, &hKey);
-		if (ret != ERROR_SUCCESS) {
-			PrintDebugString(false, _T("RegOpenKeyEx(%x,%s):%s"), hKeyRoot, szDir, ErrWrap{}(ret).c_str());
+	
+	Result open(HKEY hKeyRoot, const wchar_t* szDir) {
+		LSTATUS res{ RegOpenKeyExW(hKeyRoot, szDir, 0, KEY_ALL_ACCESS, &hKey) };
+		/*if (res = RegOpenKeyExW(hKeyRoot, szDir, 0, KEY_ALL_ACCESS, &hKey);  res != ERROR_SUCCESS) [[unlikely]] {
+			DbgPrint(false, "RegOpenKeyEx(%p,%s):%s", hKeyRoot, szDir, ErrorString{ code });
 			return false;
-			//#define HKEY_CLASSES_ROOT                   (( HKEY ) (ULONG_PTR)((LONG)0x80000000) )
-			//#define HKEY_CURRENT_USER                   (( HKEY ) (ULONG_PTR)((LONG)0x80000001) )
-			//#define HKEY_LOCAL_MACHINE                  (( HKEY ) (ULONG_PTR)((LONG)0x80000002) )
-			//#define HKEY_USERS                          (( HKEY ) (ULONG_PTR)((LONG)0x80000003) )
 		}
-		PrintDebugString(true, _T("this(%p)->RegOpenKeyEx(%x,%s)"), this, hKeyRoot, szDir);
-		return true;
+		DbgPrint(true, "this(%p)->RegOpenKeyEx(%p,%s)", this, hKeyRoot, szDir);*/
+		return { res == ERROR_SUCCESS, res };
 	}
-	bool set(const TCHAR* key, DWORD dwType, const PVOID value, DWORD cbData) {
-		LSTATUS ret = RegSetValueEx(hKey, key, 0, dwType, (BYTE*)value, cbData);
-		if (ret != ERROR_SUCCESS) {
-			PrintDebugString(false, _T("this(%p)->RegSetValueEx(%s,%d,%d):%s"), this, key, dwType, cbData, ErrWrap{}(ret).c_str());
-			//#define REG_NONE                    ( 0ul ) // No value type
-			//#define REG_SZ                      ( 1ul ) // Unicode nul terminated string
-			//#define REG_EXPAND_SZ               ( 2ul ) // Unicode nul terminated string
-			//			// (with environment variable references)
-			//#define REG_BINARY                  ( 3ul ) // Free form binary
-			//#define REG_DWORD                   ( 4ul ) // 32-bit number
-			//#define REG_DWORD_LITTLE_ENDIAN     ( 4ul ) // 32-bit number (same as REG_DWORD)
-			//#define REG_DWORD_BIG_ENDIAN        ( 5ul ) // 32-bit number
-			//#define REG_LINK                    ( 6ul ) // Symbolic Link (unicode)
-			//#define REG_MULTI_SZ                ( 7ul ) // Multiple Unicode strings
-			//#define REG_RESOURCE_LIST           ( 8ul ) // Resource list in the resource map
-			//#define REG_FULL_RESOURCE_DESCRIPTOR ( 9ul ) // Resource list in the hardware description
-			//#define REG_RESOURCE_REQUIREMENTS_LIST ( 10ul )
-			//#define REG_QWORD                   ( 11ul ) // 64-bit number
-			//#define REG_QWORD_LITTLE_ENDIAN     ( 11ul ) // 64-bit number (same as REG_QWORD)
+	Result set(const wchar_t* key, DWORD dwType, const PVOID value, DWORD cbData) {
+		/*if (code = RegSetValueExW(hKey, key, 0, dwType, (BYTE*)value, cbData);  code != ERROR_SUCCESS) [[unlikely]] {
+			DbgPrint(false, "this(%p)->RegSetValueEx(%s,%d,%d):%s", this, key, dwType, cbData, ErrorString{ code });
 			return false;
 		}
-		return true;
+		return true;*/
+		LSTATUS res{ RegSetValueExW(hKey, key, 0, dwType, (BYTE*)value, cbData) };
+		return { res == ERROR_SUCCESS, res };
 	}
-	bool get(const TCHAR* key, LPVOID value, DWORD dwSize) {
-		LSTATUS ret = RegQueryValueEx(hKey, key, NULL, NULL, (LPBYTE)value, &dwSize);
-		if (ret != ERROR_SUCCESS) {
-			PrintDebugString(false, _T("this(%p)->RegQueryValueEx(%s,%d):%s"), this, key, dwSize, ErrWrap{}(ret).c_str());
+	Result get(const wchar_t* key, LPVOID value, DWORD dwSize) {
+		/*if (code = RegQueryValueExW(hKey, key, NULL, NULL, (LPBYTE)value, &dwSize); code != ERROR_SUCCESS) [[unlikely]] {
+			DbgPrint(false, "this(%p)->RegQueryValueEx(%s,%d):%s", this, key, dwSize, ErrorString{ code });
 			return false;
 		}
-		return true;
+		return true;*/
+		LSTATUS res{ RegQueryValueExW(hKey, key, NULL, NULL, (LPBYTE)value, &dwSize) };
+		return { res == ERROR_SUCCESS, res };
 	}
-	bool del(const TCHAR* key) {
-		LSTATUS ret = RegDeleteValue(hKey, key);
-		if (ret != ERROR_SUCCESS) {
-			PrintDebugString(false, _T("this(%p)->RegDeleteValue(%s):%s"), this, key, ErrWrap{}(ret).c_str());
+	Result del(const wchar_t* key) {
+		/*if (code = RegDeleteValueW(hKey, key); code != ERROR_SUCCESS) {
+			DbgPrint(false, "this(%p)->RegDeleteValue(%s):%s", this, key, ErrorString{ code });
 			return false;
 		}
-		return true;
+		return true;*/
+		LSTATUS res{ RegDeleteValueW(hKey, key) };
+		return { res == ERROR_SUCCESS, res };
 	}
 };

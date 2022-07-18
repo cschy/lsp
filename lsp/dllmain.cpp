@@ -23,6 +23,7 @@ TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
 WSPPROC_TABLE g_NextProcTable;				//下层函数列表
 HMODULE g_hModlue;
 LPWSPPROC_TABLE g_lpProcTable;
+HANDLE g_hSender = NULL;
 
 
 #pragma data_seg (".shared")
@@ -74,8 +75,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 			else {
 				PrintDebugString(false, _T("创建进程[%s]：%s"), szSenderPath, ErrWrap{}().c_str());
 			}
-			CloseHandle(pi.hProcess);
+			//CloseHandle(pi.hProcess);
 			CloseHandle(pi.hThread);
+			g_hSender = pi.hProcess;
+			
 
 			//从文件加载需要拦截的应用程序
 			TCHAR szCfgFilePath[MAX_PATH];
@@ -101,11 +104,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		break;
     case DLL_PROCESS_DETACH:
 		PrintDebugString(true, _T("卸载lsp.dll[进程%s, 当前注入进程数:%d, lpProcTable:%x]"), g_szCurrentApp, --iCurrentInject, g_lpProcTable);
-		TCHAR path[MAX_PATH];
-		GetModuleFileName(NULL, path, MAX_PATH);
-		if (lstrcmp(path, _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\sender.exe")) == 0)
-		{
-			ExitProcess(0);
+		if (g_hSender) {
+			TerminateProcess(g_hSender, 0);
 		}
 		break;
     }

@@ -16,18 +16,18 @@
 
 
 #define PAUSE_RETURN system("pause");return 0
-#define REGDIR_ENV _T("Environment")
-#define KEY_ENTRYID _T("LSP-CatalogEntryId")
-#define FILE_DLL _T("lsp.dll")
-#define FILE_DLL_CONFIG _T("lsp.config")
-#define FILE_SENDER _T("sender.exe")
-#define FILE_SENDER_CONFIG _T("sender.config")
-#define DIR_SELECT _T("C:\\Program Files (x86)\\OneClickClientService\\SystemProtect\\lsp\\")
-#define EVENT_UNLOADLL _T("Global\\EVENT_UNLOAD_LSPDLL")
+#define REGDIR_ENV L"Environment"
+#define KEY_ENTRYID L"LSP-CatalogEntryId"
+#define FILE_DLL L"lsp.dll"
+#define FILE_DLL_CONFIG L"lsp.config"
+#define FILE_SENDER L"sender.exe"
+#define FILE_SENDER_CONFIG L"sender.config"
+#define DIR_SELECT L"C:\\Program Files\\lsp@oneclick\\"
+#define EVENT_UNLOADLL L"Global\\EVENT_UNLOAD_LSPDLL"
 
 
 RegWrap g_Env;
-std::vector<PROCESSENTRY32> g_hookPe32;
+std::vector<PROCESSENTRY32W> g_hookPe32;
 
 
 LPWSAPROTOCOL_INFOW GetProvider(LPINT lpTotalProtocols)
@@ -40,7 +40,7 @@ LPWSAPROTOCOL_INFOW GetProvider(LPINT lpTotalProtocols)
     if (WSCEnumProtocols(NULL, pProtoInfo, &dwSize, &nError) == SOCKET_ERROR)
     {
         if (nError != WSAENOBUFS) {
-            PrintDebugString(false, _T("WSCEnumProtocols:%s"), ErrWrap{}(nError).c_str());
+            DbgPrint(false, "WSCEnumProtocols:%s", ErrorString{ nError });
             return NULL;
         } 
     }
@@ -55,9 +55,9 @@ void FreeProvider(LPWSAPROTOCOL_INFOW pProtoInfo)
     GlobalFree(pProtoInfo);
 }
 
-bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
+bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
 {
-    WCHAR wszLSPName[] = L"MyLSP";
+    wchar_t wszLSPName[] = L"MyLSP";
     WSAPROTOCOL_INFOW OriginalProtocolInfo[4];   //数组成员为TCP、UDP、TCP6、UDP6
     int nArrayCount = 0;    //数组个数索引
     int nError;
@@ -119,7 +119,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
     WSAPROTOCOL_INFOW LayeredProtocolInfo;
     memcpy(&LayeredProtocolInfo, &OriginalProtocolInfo[0], sizeof(WSAPROTOCOL_INFOW));
     //修改协议名称的字符串
-    lstrcpy(LayeredProtocolInfo.szProtocol, wszLSPName);
+    lstrcpyW(LayeredProtocolInfo.szProtocol, wszLSPName);
     //表示分层协议
     LayeredProtocolInfo.ProtocolChain.ChainLen = LAYERED_PROTOCOL;//0
     //表示方式为由提供者自己设置
@@ -129,7 +129,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
     CoCreateGuid(&Layered_guid);
     if (SOCKET_ERROR == WSCInstallProvider(&Layered_guid, wszDllPath, &LayeredProtocolInfo, 1, &nError))
     {
-        PrintDebugString(false, _T("安装分层协议失败：%s"), ErrWrap{}(nError).c_str());
+        DbgPrint(false, "安装分层协议失败：%s", ErrorString{ nError });
         FreeProvider(pProtoInfo);
         return false;
     }
@@ -149,13 +149,13 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
             //取出分层协议的目录入口ID
             dwLayeredCatalogId = pProtoInfo[i].dwCatalogEntryId;
             
-            PrintDebugString(true, _T("分层协议的目录入口ID：%d"), dwLayeredCatalogId);
+            DbgPrint(true, "分层协议的目录入口ID：%d", dwLayeredCatalogId);
             g_Env.set(KEY_ENTRYID, REG_DWORD, &dwLayeredCatalogId, sizeof(dwLayeredCatalogId));
             //取环境变量测试
             DWORD dwId;
             g_Env.get(KEY_ENTRYID, &dwId, sizeof(dwId));
             if (dwId == dwLayeredCatalogId) {
-                PrintDebugString(true, _T("写入环境变量成功 [key:%s, value:%d]"), KEY_ENTRYID, dwId);
+                DbgPrint(true, "写入环境变量成功 [key:%s, value:%d]", KEY_ENTRYID, dwId);
             }
             break;
         }
@@ -163,12 +163,12 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
 
 
     //安装协议链
-    WCHAR wszChainName[WSAPROTOCOL_LEN + 1];//新分层协议的名称 over 取出来的入口模板的名称
+    wchar_t wszChainName[WSAPROTOCOL_LEN + 1];//新分层协议的名称 over 取出来的入口模板的名称
     for (int i = 0; i < nArrayCount; i++)
     {
-        _stprintf_s(wszChainName, _T("%s over %s"), wszLSPName, OriginalProtocolInfo[i].szProtocol);
+        swprintf_s(wszChainName, _T("%s over %s"), wszLSPName, OriginalProtocolInfo[i].szProtocol);
         ZeroMemory(OriginalProtocolInfo[i].szProtocol, sizeof(OriginalProtocolInfo[i].szProtocol));
-        lstrcpy(OriginalProtocolInfo[i].szProtocol, wszChainName);  //将这个模板的名称改成新名称↑
+        lstrcpyW(OriginalProtocolInfo[i].szProtocol, wszChainName);  //将这个模板的名称改成新名称↑
         if (OriginalProtocolInfo[i].ProtocolChain.ChainLen == 1)    //这是基础协议的模板
         {   //修改基础协议模板的协议链, 在协议链[1]写入真正TCP/UDP[基础协议]的入口ID
             OriginalProtocolInfo[i].ProtocolChain.ChainEntries[1] = OriginalProtocolInfo[i].dwCatalogEntryId;
@@ -187,7 +187,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
     CoCreateGuid(&AgreementChain_guid);
     if (SOCKET_ERROR == WSCInstallProvider(&AgreementChain_guid, wszDllPath, OriginalProtocolInfo, nArrayCount, &nError))
     {
-        PrintDebugString(false, _T("安装协议链失败：%s"), ErrWrap{}(nError).c_str());
+        DbgPrint(false, "安装协议链失败：%s", ErrorString{ nError });
         FreeProvider(pProtoInfo);
         return false;
     }
@@ -217,7 +217,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
     //重新排序Winsock目录
     int retWSCWriteProviderOrder = WSCWriteProviderOrder(dwIds, nIndex);
     if (retWSCWriteProviderOrder != ERROR_SUCCESS) {
-        PrintDebugString(false, _T("WSCWriteProviderOrder:%s"), ErrWrap{}(retWSCWriteProviderOrder).c_str());
+        DbgPrint(false, "WSCWriteProviderOrder:%s", ErrorString{ retWSCWriteProviderOrder });
         FreeProvider(pProtoInfo);
         return false;
     }
@@ -229,7 +229,7 @@ bool InstallProvider(const WCHAR* wszDllPath)   //参数：LSP的DLL的地址
 
 bool RemoveProvider(DWORD dwLayeredCatalogId)
 {
-    PrintDebugString(true, _T("分层协议入口ID：%d"), dwLayeredCatalogId);
+    DbgPrint(true, "分层协议入口ID：%d", dwLayeredCatalogId);
     LPWSAPROTOCOL_INFOW pProtoInfo = NULL;
     int nProtocols = 0;
     //遍历出所有协议
@@ -249,7 +249,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
         }
     }
     if (i == nProtocols) {
-        PrintDebugString(false, _T("没有找到相应的分层协议"));
+        DbgPrint(false, "没有找到相应的分层协议");
         return false;
     }
     
@@ -260,7 +260,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
         {   //先卸载协议链
             if (SOCKET_ERROR == WSCDeinstallProvider(&pProtoInfo[i].ProviderId, &nError))
             {
-                PrintDebugString(false, _T("卸载协议链失败：%s"), ErrWrap{}(nError).c_str());
+                DbgPrint(false, "卸载协议链失败：%s", ErrorString{ nError });
                 return false;
             }
             break;
@@ -268,7 +268,7 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
     }
     if (SOCKET_ERROR == WSCDeinstallProvider(&Layered_guid, &nError))
     {
-        PrintDebugString(false, _T("卸载分层协议失败：%s"), ErrWrap{}(nError).c_str());
+        DbgPrint(false, "卸载分层协议失败：%s", ErrorString{ nError });
         return false;
     }
     return true;
@@ -291,32 +291,72 @@ bool RemoveProvider(DWORD dwLayeredCatalogId)
 //    }
 //}
 
-void CheckProcessOpen(const TCHAR* szProc, std::vector<PROCESSENTRY32>& vec_pe32)
+void CheckProcessOpen(const wchar_t* szProc, std::vector<PROCESSENTRY32W>& vec_pe32)
 {
-    PROCESSENTRY32 pe32;
-    pe32.dwSize = sizeof(PROCESSENTRY32);
+    PROCESSENTRY32W pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32W);
     HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     
     if (hProcessSnap == INVALID_HANDLE_VALUE) {
-        PrintDebugString(false, _T("CreateToolhelp32Snapshot: %s"), ErrWrap{}().c_str());
+        DbgPrint(false, "CreateToolhelp32Snapshot: %s", ErrorString{});
         return;
     }
 
-    BOOL bMore = Process32First(hProcessSnap, &pe32);
+    BOOL bMore = Process32FirstW(hProcessSnap, &pe32);
     while (bMore) 
     {
-        PathRemoveExtension(pe32.szExeFile);
-        if (lstrcmp(pe32.szExeFile, szProc) == 0) {
+        PathRemoveExtensionW(pe32.szExeFile);
+        if (lstrcmpW(pe32.szExeFile, szProc) == 0) {
             vec_pe32.emplace_back(pe32);
             break;
         }
-        bMore = Process32Next(hProcessSnap, &pe32);
+        bMore = Process32NextW(hProcessSnap, &pe32);
     }
     CloseHandle(hProcessSnap);
 }
 
-bool GetUserSelectDir(tstring& res)
+//void __TerminateProcess(std::wstring_view strFullPath)
+//{
+//    PROCESSENTRY32W pe32;
+//    pe32.dwSize = sizeof(PROCESSENTRY32W);
+//    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+//    if (hProcessSnap == INVALID_HANDLE_VALUE) {
+//        DbgPrint(false, "TH32CS_SNAPPROCESS: %s", ErrorString{});
+//        return;
+//    }
+//    BOOL bMore = Process32FirstW(hProcessSnap, &pe32);
+//    while (bMore)
+//    {
+//        if (lstrcmpW(pe32.szExeFile, strFullPath.substr(strFullPath.find_last_of(_T('\\')) + 1).data()) == 0) {
+//            MODULEENTRY32W me32;
+//            me32.dwSize = sizeof(MODULEENTRY32W);
+//            HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pe32.th32ProcessID);
+//            if (hModuleSnap == INVALID_HANDLE_VALUE) {
+//                DbgPrint(false, "TH32CS_SNAPMODULE: %s", ErrorString{});
+//                return;
+//            }
+//            Module32FirstW(hModuleSnap, &me32);
+//            //PrintDebugString(true, _T("process name: %s"), me32.szExePath);
+//            if (lstrcmpW(me32.szExePath, strFullPath.data()) == 0) {
+//                DbgPrint(true, "__TerminateProcess:%s", strFullPath.data());
+//                HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, me32.th32ProcessID);
+//                TerminateProcess(hProcess, 0);
+//                WaitForSingleObject(hProcess, 1000);
+//                CloseHandle(hProcess);
+//                break;
+//            }
+//
+//            CloseHandle(hModuleSnap);
+//            break;
+//        }
+//        bMore = Process32NextW(hProcessSnap, &pe32);
+//    }
+//    CloseHandle(hProcessSnap);
+//}
+
+std::wstring GetUserSelectDir()
 {
+    std::wstring res{ L"false" };
     HRESULT hr = CoInitialize(NULL);
     DWORD dwFlags;
     IFileOpenDialog* pfd = NULL;
@@ -324,10 +364,10 @@ bool GetUserSelectDir(tstring& res)
     hr = pfd->GetOptions(&dwFlags);
     hr = pfd->SetOptions(dwFlags | FOS_PICKFOLDERS);
     IShellItem* pShItem = NULL;
-    SHCreateItemFromParsingName(L"C:\\Program Files (x86)", NULL, IID_PPV_ARGS(&pShItem));
+    SHCreateItemFromParsingName(L"C:\\Program Files (x86)\\OneClickClientService\\SystemProtect", NULL, IID_PPV_ARGS(&pShItem));
     pfd->SetDefaultFolder(pShItem);
     pfd->SetTitle(L"请选择存放dll的文件夹");
-    hr = pfd->Show(GetConsoleWindow());
+    hr = pfd->Show(NULL);
 
     if (hr == S_OK)
     {
@@ -338,119 +378,112 @@ bool GetUserSelectDir(tstring& res)
             if (ret == S_OK) {
                 res = lpSelect;
                 CoTaskMemFree(lpSelect);//free memory;
-                CoUninitialize();
-                return true;
             }
         }
     }
     CoUninitialize();
-    return false;
+    return res;
 }
 
-
-int _tmain(int argc, TCHAR* argv[])
+bool deleteDir(const wchar_t* dir)
 {
-    setlocale(LOCALE_ALL, "chs");
-    if (!g_Env.open(HKEY_CURRENT_USER, REGDIR_ENV)) {
-        PAUSE_RETURN;
+    SHFILEOPSTRUCT FileOp{ 0 };
+    FileOp.fFlags = FOF_NO_UI;
+    FileOp.pFrom = dir;
+    FileOp.wFunc = FO_DELETE;
+    if (int op = SHFileOperationW(&FileOp) != 0) {
+        DbgPrint(false, "SHFileOperation:%d", op);
+        return false;
     }
+    return true;
+}
+
+int wmain(int argc, wchar_t* argv[])
+{
+    M_ErrHand(setlocale(LOCALE_ALL, "chs") == nullptr, L"setlocale中文失败", PAUSE_RETURN);
+    M_ErrHand(g_Env.open(HKEY_CURRENT_USER, REGDIR_ENV), PAUSE_RETURN);
     DWORD dwEntryId;
     bool bGetEntryId = g_Env.get(KEY_ENTRYID, &dwEntryId, sizeof(dwEntryId));
 
+    const std::wstring strSelectDir{ DIR_SELECT };
+    const std::wstring dstDllFile{ strSelectDir + FILE_DLL };
+    const std::wstring dstCfgFile{ strSelectDir + FILE_DLL_CONFIG };
+    const std::wstring dstSenderFile{ strSelectDir + FILE_SENDER };
+    
 
-    PrintDebugString(true, _T("第零步：获取用户请求"));
-    int ans = MessageBox(NULL, _T("安装：是，卸载：否，什么也不做：取消"), _T("提示"), MB_YESNOCANCEL | MB_DEFBUTTON3 | MB_ICONQUESTION);
-    if (ans == IDCANCEL) {
+    DbgPrint(true, "第零步：获取用户请求");
+    switch (MessageBoxW(NULL, L"安装：是，卸载：否，什么也不做：取消", L"提示", MB_YESNOCANCEL | MB_DEFBUTTON3 | MB_ICONQUESTION))
+    {
+    case IDCANCEL:
         PAUSE_RETURN;
-    }
-    else if (ans == IDNO) {
+        break;
+    case IDNO:
         if (!bGetEntryId) {
-            MessageBox(NULL, _T("已经卸载"), _T("提示"), MB_ICONINFORMATION);
+            MessageBoxW(NULL, L"已经卸载", L"提示", MB_ICONINFORMATION);
             PAUSE_RETURN;
         }
         if (RemoveProvider(dwEntryId) && g_Env.del(KEY_ENTRYID)) {
-            PrintDebugString(true, _T("设置退出lsp.dll事件:%d"), SetEvent(OpenEvent(EVENT_ALL_ACCESS, FALSE, EVENT_UNLOADLL)));
-            MessageBox(NULL, _T("卸载分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
+            DbgPrint(true, "设置退出lsp.dll事件:%d", SetEvent(OpenEvent(EVENT_ALL_ACCESS, FALSE, EVENT_UNLOADLL)));
+            //__TerminateProcess(dstSenderFile);//如果sender是CSRSS进程打开的就拒接访问了
+            bool res = deleteDir(DIR_SELECT);
+            while (!res) { res = deleteDir(DIR_SELECT); }
+            MessageBoxW(NULL, L"卸载分层协议及其协议链成功", L"提示", MB_ICONINFORMATION);
         }
         else {
-            MessageBox(NULL, _T("卸载分层协议及其协议链失败"), _T("错误"), MB_ICONWARNING);
+            MessageBoxW(NULL, L"卸载分层协议及其协议链失败", L"错误", MB_ICONWARNING);
         }
         PAUSE_RETURN;
+        break;
+    default:
+        break;
     }
-    
 
-    PrintDebugString(true, _T("第一步：检查环境变量[%s]判断是否已经安装"), KEY_ENTRYID);
+
+    DbgPrint(true, "第一步：检查环境变量[%s]判断是否已经安装", KEY_ENTRYID);
     if (bGetEntryId) {
-        MessageBox(NULL, _T("检测到已经安装，请先卸载"), _T("提示"), MB_ICONINFORMATION);
+        MessageBoxW(NULL, L"检测到已经安装，请先卸载", L"提示", MB_ICONINFORMATION);
         PAUSE_RETURN;
     }
-    /*tstring selectDir;
-    if (!GetUserSelectDir(selectDir)) {
-        MessageBox(GetConsoleWindow(), _T("请选择存放dll的文件夹，最好放在系统盘的目录下"), _T("提示"), MB_OK);
-        return 0;
-    }
-    _tprintf_s(_T("选择安放dll的文件夹：%s\n"), selectDir.c_str());*/
 
 
-    PrintDebugString(true, _T("第二步：拷贝dll及其资源到安全目录：%s"), DIR_SELECT);
+    DbgPrint(true, "第二步：拷贝dll及其资源到安全目录：%s", DIR_SELECT);
     if (!PathIsDirectory(DIR_SELECT)) {
-        if (!CreateDirectory(DIR_SELECT, NULL) && GetLastError() == ERROR_PATH_NOT_FOUND) {
-            MessageBox(NULL, _T("非统一客户端用户禁止使用"), _T("错误"), MB_ICONWARNING);
+        if (!CreateDirectory(DIR_SELECT, NULL)) {
+            DbgPrint(false, "CreateDirectory:%s", ErrorString{});
             PAUSE_RETURN;
         }
     }
 
-    auto fnCopyFile = [](const TCHAR* file, const TCHAR* dstFilePath) {
-        TCHAR srcFilePath[MAX_PATH];
+    auto fnCopyFile = [](const wchar_t* file, const wchar_t* dstFilePath) {
+        wchar_t srcFilePath[MAX_PATH];
         GetModuleFileName(NULL, srcFilePath, MAX_PATH);
         PathRemoveFileSpec(srcFilePath);
         PathAppend(srcFilePath, file);
 
         if (!CopyFile(srcFilePath, dstFilePath, FALSE)) {
-            PrintDebugString(false, _T("CopyFile失败[src:%s, dst:%s, msg:%s]"), srcFilePath, dstFilePath, ErrWrap{}().c_str());
+            DbgPrint(false, "CopyFile失败[src:%s, dst:%s, msg:%s]", srcFilePath, dstFilePath, ErrorString{});
             return false;
         }
         return true;
     };
-    tstring strSelectDir = DIR_SELECT;
-    tstring dstDllFile = strSelectDir + FILE_DLL;
-    tstring dstCfgFile = strSelectDir + FILE_DLL_CONFIG;
+    
     if (!fnCopyFile(FILE_DLL, dstDllFile.c_str())
         || !fnCopyFile(FILE_DLL_CONFIG, dstCfgFile.c_str())
-        || !fnCopyFile(FILE_SENDER, (strSelectDir + FILE_SENDER).c_str())
+        || !fnCopyFile(FILE_SENDER, dstSenderFile.c_str())
         || !fnCopyFile(FILE_SENDER_CONFIG, (strSelectDir + FILE_SENDER_CONFIG).c_str())
     ) {
         PAUSE_RETURN;
     }
-    /*std::vector<tstring> paths;
-    GetPathExceptSelf(paths);
-    for (auto& i : paths) {
-        TCHAR srcFileName[MAX_PATH];
-        lstrcpy(srcFileName, i.c_str());
-        PathStripPath(srcFileName);
-        _tprintf_s(_T("源文件：%s\n"), srcFileName);
-
-        TCHAR dstFileName[MAX_PATH];
-        lstrcpy(dstFileName, selectDir.c_str());
-        PathAppend(dstFileName, srcFileName);
-        _tprintf_s(_T("目的文件：%s\n"), dstFileName);
-        if (CopyFile(i.c_str(), dstFileName, FALSE)) {
-            _tprintf_s(_T("拷贝成功\n\n"));
-        }
-        else {
-            _tprintf_s(_T("拷贝失败：%d\n\n"), GetLastError());
-        }
-    }*/
     
     //确保配置文件中的进程已关闭
-    PrintDebugString(true, _T("安装之前确保配置文件中的进程已关闭"));
-    tifstream ifs(dstCfgFile);
+    DbgPrint(true, "安装之前确保配置文件中的进程已关闭");
+    std::wifstream ifs(dstCfgFile);
     if (ifs.fail()) {
-        PrintDebugString(false, _T("ifs.fail():%s"), ErrWrap{}().c_str());
+        DbgPrint(false, "ifs.fail():%s", ErrorString{});
         PAUSE_RETURN;
     }
-    tstringstream ss;
-    tstring strHookProc;
+    std::wstringstream ss;
+    std::wstring strHookProc;
     while (std::getline(ifs, strHookProc))
     {
         CheckProcessOpen(strHookProc.c_str(), g_hookPe32);
@@ -459,18 +492,18 @@ int _tmain(int argc, TCHAR* argv[])
     ifs.close();
     for (auto& i : g_hookPe32) {
         ss.clear();
-        ss.str(_T(""));
-        ss << _T("请关闭：") << i.szExeFile;
-        PrintDebugString(true, ss.str().c_str());
+        ss.str(L"");
+        ss << L"请关闭：" << i.szExeFile;
+        DbgPrintVar(true, ss.str().c_str());
     }
     if (!ss.str().empty()) {
-        int ans = MessageBox(NULL, _T("必须先关闭命令行提示的通讯软件，自动关闭？"), _T("提示"), MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2);
+        int ans = MessageBoxW(NULL, L"必须先关闭命令行提示的通讯软件，自动关闭？", L"提示", MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2);
         if (ans == IDYES) {
             for (auto& i : g_hookPe32) {
                 BOOL res = TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, i.th32ProcessID), 0);
-                PrintDebugString(true, _T("测试关闭%s:%d"), i.szExeFile, res);
+                DbgPrint(true, "测试关闭%s:%d", i.szExeFile, res);
                 if (!res) {
-                    PrintDebugString(false, _T("关闭%s失败:%s"), i.szExeFile, ErrWrap{}().c_str());
+                    DbgPrint(false, "关闭%s失败:%s", i.szExeFile, ErrorString{});
                     PAUSE_RETURN;
                 }
             }
@@ -480,12 +513,12 @@ int _tmain(int argc, TCHAR* argv[])
         }
     }
     
-    PrintDebugString(true, _T("第三步：安装dll：%s"), dstDllFile.c_str());
+    DbgPrint(true, "第三步：安装dll：%s", dstDllFile.c_str());
     if (InstallProvider(dstDllFile.c_str())) {
-        MessageBox(NULL, _T("安装分层协议及其协议链成功"), _T("提示"), MB_ICONINFORMATION);
+        MessageBoxW(NULL, L"安装分层协议及其协议链成功", L"提示", MB_ICONINFORMATION);
     }
     else {
-        MessageBox(NULL, _T("安装分层协议及其协议链失败"), _T("错误"), MB_ICONWARNING);
+        MessageBoxW(NULL, L"安装分层协议及其协议链失败", L"错误", MB_ICONWARNING);
     }
     PAUSE_RETURN;
 }
