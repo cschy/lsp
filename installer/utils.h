@@ -117,17 +117,18 @@ public:
 	}
 };
 
+struct Result {
+	bool res;
+	DWORD code;
+	operator bool() {
+		return res;
+	}
+};
+
 class RegWrap {
 private:
 	HKEY hKey;
 public:
-	struct Result {
-		bool res;
-		int code;
-		operator bool() {
-			return res;
-		}
-	};
 	RegWrap() = default;
 	RegWrap(HKEY hKeyRoot, const wchar_t* szDir) {
 		open(hKeyRoot, szDir);
@@ -138,38 +139,18 @@ public:
 	
 	Result open(HKEY hKeyRoot, const wchar_t* szDir) {
 		LSTATUS res{ RegOpenKeyExW(hKeyRoot, szDir, 0, KEY_ALL_ACCESS, &hKey) };
-		/*if (res = RegOpenKeyExW(hKeyRoot, szDir, 0, KEY_ALL_ACCESS, &hKey);  res != ERROR_SUCCESS) [[unlikely]] {
-			DbgPrint(false, "RegOpenKeyEx(%p,%s):%s", hKeyRoot, szDir, ErrorString{ code });
-			return false;
-		}
-		DbgPrint(true, "this(%p)->RegOpenKeyEx(%p,%s)", this, hKeyRoot, szDir);*/
-		return { res == ERROR_SUCCESS, res };
+		return { res == ERROR_SUCCESS, (DWORD)res };
 	}
 	Result set(const wchar_t* key, DWORD dwType, const PVOID value, DWORD cbData) {
-		/*if (code = RegSetValueExW(hKey, key, 0, dwType, (BYTE*)value, cbData);  code != ERROR_SUCCESS) [[unlikely]] {
-			DbgPrint(false, "this(%p)->RegSetValueEx(%s,%d,%d):%s", this, key, dwType, cbData, ErrorString{ code });
-			return false;
-		}
-		return true;*/
 		LSTATUS res{ RegSetValueExW(hKey, key, 0, dwType, (BYTE*)value, cbData) };
-		return { res == ERROR_SUCCESS, res };
+		return { res == ERROR_SUCCESS, (DWORD)res };
 	}
 	Result get(const wchar_t* key, LPVOID value, DWORD dwSize) {
-		/*if (code = RegQueryValueExW(hKey, key, NULL, NULL, (LPBYTE)value, &dwSize); code != ERROR_SUCCESS) [[unlikely]] {
-			DbgPrint(false, "this(%p)->RegQueryValueEx(%s,%d):%s", this, key, dwSize, ErrorString{ code });
-			return false;
-		}
-		return true;*/
 		LSTATUS res{ RegQueryValueExW(hKey, key, NULL, NULL, (LPBYTE)value, &dwSize) };
-		return { res == ERROR_SUCCESS, res };
+		return { res == ERROR_SUCCESS, (DWORD)res };
 	}
 	Result del(const wchar_t* key) {
-		/*if (code = RegDeleteValueW(hKey, key); code != ERROR_SUCCESS) {
-			DbgPrint(false, "this(%p)->RegDeleteValue(%s):%s", this, key, ErrorString{ code });
-			return false;
-		}
-		return true;*/
 		LSTATUS res{ RegDeleteValueW(hKey, key) };
-		return { res == ERROR_SUCCESS, res };
+		return { res == ERROR_SUCCESS, (DWORD)res };
 	}
 };
