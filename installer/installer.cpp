@@ -415,7 +415,6 @@ int wmain(int argc, wchar_t* argv[])
             PAUSE_RETURN;
         }
         if (RemoveProvider(dwEntryId) && g_Env.del(KEY_ENTRYID)) {
-            static_assert(NUMARGS(SetEvent(OpenEvent(EVENT_ALL_ACCESS, FALSE, EVENT_UNLOADLL)), 2) == 2);
             DbgPrint(true, "设置退出lsp.dll事件:%d", SetEvent(OpenEventW(EVENT_ALL_ACCESS, FALSE, EVENT_UNLOADLL)));
             //__TerminateProcess(dstSenderFile);//如果sender是CSRSS进程打开的就拒接访问了
             bool res = deleteDir(DIR_SELECT);
