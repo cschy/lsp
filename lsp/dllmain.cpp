@@ -23,7 +23,6 @@ TCHAR	g_szCurrentApp[MAX_PATH] = { 0 };	//当前调用本DLL的程序名称
 WSPPROC_TABLE g_NextProcTable;				//下层函数列表
 HMODULE g_hModlue;
 LPWSPPROC_TABLE g_lpProcTable;
-HANDLE g_hSender = NULL;
 
 
 #pragma data_seg (".shared")
@@ -75,9 +74,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 			else {
 				PrintDebugString(false, _T("创建进程[%s]：%s"), szSenderPath, ErrWrap{}().c_str());
 			}
-			//CloseHandle(pi.hProcess);
+			CloseHandle(pi.hProcess);
 			CloseHandle(pi.hThread);
-			g_hSender = pi.hProcess;
 			
 
 			//从文件加载需要拦截的应用程序
@@ -104,9 +102,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		break;
     case DLL_PROCESS_DETACH:
 		PrintDebugString(true, _T("卸载lsp.dll[进程%s, 当前注入进程数:%d, lpProcTable:%x]"), g_szCurrentApp, --iCurrentInject, g_lpProcTable);
-		if (g_hSender) {
-			TerminateProcess(g_hSender, 0);
-		}
 		break;
     }
     return TRUE;
@@ -152,7 +147,9 @@ int WSPAPI WSPConnect(SOCKET s, const struct sockaddr FAR* name, int namelen, LP
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin_addr;
 				copyData.cbData = sizeof(addr->sin_addr);
-				SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData);
+				if (SendMessage(hSenderWnd, WM_COPYDATA, 4, (LPARAM)&copyData) != 0) {
+					PrintDebugString(false, _T("给sender[%x]发送ipv4失败:%s"), hSenderWnd, ErrWrap{}().c_str());
+				}
 			}
 			else if (namelen == sizeof(sockaddr_in6)) {
 				sockaddr_in6* addr = (sockaddr_in6*)name;
@@ -163,7 +160,9 @@ int WSPAPI WSPConnect(SOCKET s, const struct sockaddr FAR* name, int namelen, LP
 				COPYDATASTRUCT copyData;
 				copyData.lpData = &addr->sin6_addr;
 				copyData.cbData = sizeof(addr->sin6_addr);
-				SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData);
+				if (SendMessage(hSenderWnd, WM_COPYDATA, 6, (LPARAM)&copyData) != 0) {
+					PrintDebugString(false, _T("给sender[%x]发送ipv6失败:%s"), hSenderWnd, ErrWrap{}().c_str());
+				}
 			}
 
 			break;
@@ -220,6 +219,10 @@ DWORD WINAPI ThreadFun(LPVOID lpThreadParameter)
 	if (lpThreadParameter) {
 		WaitForSingleObject(lpThreadParameter, INFINITE);
 		CloseHandle(lpThreadParameter);
+		if (lstrcmpW(g_szCurrentApp, L"sender") == 0) {
+			PrintDebugString(true, _T("%s关闭sender"), g_szCurrentApp);
+			ExitProcess(0);
+		}
 		PrintDebugString(true, _T("测试%s卸载lsp.dll"), g_szCurrentApp);
 
 		g_lpProcTable->lpWSPConnect = g_NextProcTable.lpWSPConnect;

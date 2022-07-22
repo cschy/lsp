@@ -234,7 +234,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
-                std::string data = UnicodeToUTF8(cAddr).c_str();
+                std::string data = UnicodeToUTF8(tstring(L"<") + cAddr + L'>');
                 if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * data.length(), 0)) {
                     PrintDebugString(false, _T("send函数错误[%s]"), ErrWrap{}(WSAGetLastError()).c_str());
                 }
@@ -251,7 +251,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
             if (ipSet.insert(cAddr).second) {
                 PrintDebugString(true, _T("IPSetSize: %d"), ipSet.size());
-                std::string data = UnicodeToUTF8(cAddr).c_str();
+                std::string data = UnicodeToUTF8(tstring(L"<") + cAddr + L'>');
                 if (SOCKET_ERROR == send(sock, data.c_str(), sizeof(char) * data.length(), 0)) {
                     PrintDebugString(false, _T("send函数错误[%s]"), ErrWrap{}(WSAGetLastError()).c_str());
                 }

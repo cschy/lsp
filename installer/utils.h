@@ -30,17 +30,33 @@ std::wstring format(const wchar_t* szFmt, ...)
 	return ret;
 }
 
+consteval size_t getFormatSignCount(std::string_view sv, const char sign = '%') {
+	size_t i = 0;
+	if (size_t pos = sv.find(sign); pos != std::string_view::npos) {
+		if (sv[pos + 1] != sign) [[likely]] {
+			i++;
+		}
+		i += getFormatSignCount(sv.substr(pos + 2), sign);
+	}
+	return i;
+}
+
 #define DbgPrintVar(flag, var) print(format(L###flag": %s\n", var))
-#define DbgPrint(flag, fmt, ...) print(format(L###flag": "##fmt"\n", ##__VA_ARGS__))
+#define NUMARGS(...) std::tuple_size_v<decltype(std::make_tuple(__VA_ARGS__))>
+#define DbgPrint(flag, fmt, ...) \
+static_assert(getFormatSignCount(fmt) == NUMARGS(__VA_ARGS__), \
+"the number of format characters should be the same as the number of parameters"); \
+print(format(L###flag": "##fmt"\n", ##__VA_ARGS__));
+
 #define _Macro_get_funame(expr)\
 	constexpr std::wstring_view __fn_full{ L#expr };\
 	constexpr size_t __pos_bracket{ __fn_full.find_first_of(L'(') };\
-	static_assert(__pos_bracket != std::wstring_view::npos);\
+	static_assert(__pos_bracket != std::wstring_view::npos, "expression does not contain a function");\
 	constexpr std::wstring_view __fname{ __fn_full.substr(0, __pos_bracket) };
 #define _Macro_dbgprint(fname, code) {\
 	constexpr std::wstring_view __file{ std::wstring_view{__FILEW__}.substr(std::wstring_view{__FILEW__}.find_last_of('\\') + 1) };\
 	DbgPrint(false, "[%s:%s:%d:%s]: %s", __file.data(), __FUNCTIONW__, __LINE__, fname, ErrorString{ code });\
-	static_assert(__file != __FILEW__);\
+	static_assert(__file != __FILEW__, "filepath not trimmed");\
 }
 #define _Macro_error_object(fn, handler) {\
 	_Macro_get_funame(fn);\
@@ -54,12 +70,12 @@ std::wstring format(const wchar_t* szFmt, ...)
 	_Macro_get_funame(err_cond);\
 	constexpr std::string_view __cond{ #err_cond };\
 	constexpr size_t __pos_eq{ __cond.find_last_of('=') };\
-	static_assert(__pos_eq != std::string_view::npos\
-	&& (__cond[__pos_eq - 1] == '!' || __cond[__pos_eq - 1] == '=')\
-	&& __fname.find(L'=') == std::wstring_view::npos);\
+	static_assert(__pos_eq != std::string_view::npos && (__cond[__pos_eq - 1] == '!' || __cond[__pos_eq - 1] == '='),\
+	"this is not a conditional expression");\
+	static_assert(__fname.find(L'=') == std::wstring_view::npos, "function should be on the left");\
 	if (err_cond) {\
-		_Macro_dbgprint(__fname.data(), code); \
-		handler; \
+		_Macro_dbgprint(__fname.data(), code);\
+		handler;\
 	}\
 }
 #define _Macro_expand(x) x
