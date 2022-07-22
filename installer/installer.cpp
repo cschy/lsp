@@ -55,7 +55,7 @@ void FreeProvider(LPWSAPROTOCOL_INFOW pProtoInfo)
     GlobalFree(pProtoInfo);
 }
 
-bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
+DWORD InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
 {
     wchar_t wszLSPName[] = L"MyLSP";
     WSAPROTOCOL_INFOW OriginalProtocolInfo[4];   //数组成员为TCP、UDP、TCP6、UDP6
@@ -65,7 +65,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     int nProtocols = 0;
     LPWSAPROTOCOL_INFOW pProtoInfo = GetProvider(&nProtocols);
     if (nProtocols < 1 || pProtoInfo == NULL) {
-        return false;
+        return 0;
     }
 
     bool bFindUdp = false, bFindTcp = false, bFindUdp6 = false, bFindTcp6 = false;
@@ -113,7 +113,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     if (nArrayCount == 0)
     {
         FreeProvider(pProtoInfo);
-        return false;
+        return 0;
     }
     //安装LSP分层协议
     WSAPROTOCOL_INFOW LayeredProtocolInfo;
@@ -131,7 +131,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     {
         DbgPrint(false, "安装分层协议失败：%s", ErrorString{ nError });
         FreeProvider(pProtoInfo);
-        return false;
+        return 0;
     }
     FreeProvider(pProtoInfo);
 
@@ -140,7 +140,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     DWORD dwLayeredCatalogId = 0;   //分层协议的入口ID号
     pProtoInfo = GetProvider(&nProtocols);
     if (nProtocols < 1 || pProtoInfo == NULL) {
-        return false;
+        return 0;
     }
     for (int i = 0; i < nProtocols; i++)    //一般安装新入口后,会排在最低部
     {
@@ -148,15 +148,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
         {
             //取出分层协议的目录入口ID
             dwLayeredCatalogId = pProtoInfo[i].dwCatalogEntryId;
-            
             DbgPrint(true, "分层协议的目录入口ID：%d", dwLayeredCatalogId);
-            g_Env.set(KEY_ENTRYID, REG_DWORD, &dwLayeredCatalogId, sizeof(dwLayeredCatalogId));
-            //取环境变量测试
-            DWORD dwId;
-            g_Env.get(KEY_ENTRYID, &dwId, sizeof(dwId));
-            if (dwId == dwLayeredCatalogId) {
-                DbgPrint(true, "写入环境变量成功 [key:%s, value:%d]", KEY_ENTRYID, dwId);
-            }
             break;
         }
     }
@@ -166,7 +158,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     wchar_t wszChainName[WSAPROTOCOL_LEN + 1];//新分层协议的名称 over 取出来的入口模板的名称
     for (int i = 0; i < nArrayCount; i++)
     {
-        swprintf_s(wszChainName, _T("%s over %s"), wszLSPName, OriginalProtocolInfo[i].szProtocol);
+        swprintf_s(wszChainName, L"%s over %s", wszLSPName, OriginalProtocolInfo[i].szProtocol);
         ZeroMemory(OriginalProtocolInfo[i].szProtocol, sizeof(OriginalProtocolInfo[i].szProtocol));
         lstrcpyW(OriginalProtocolInfo[i].szProtocol, wszChainName);  //将这个模板的名称改成新名称↑
         if (OriginalProtocolInfo[i].ProtocolChain.ChainLen == 1)    //这是基础协议的模板
@@ -189,7 +181,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     {
         DbgPrint(false, "安装协议链失败：%s", ErrorString{ nError });
         FreeProvider(pProtoInfo);
-        return false;
+        return 0;
     }
     FreeProvider(pProtoInfo);
 
@@ -198,7 +190,7 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     //重新遍历所有协议
     pProtoInfo = GetProvider(&nProtocols);
     if (nProtocols < 1 || pProtoInfo == NULL) {
-        return false;
+        return 0;
     }
     DWORD dwIds[128];
     int nIndex = 0;
@@ -219,12 +211,12 @@ bool InstallProvider(const wchar_t* wszDllPath)   //参数：LSP的DLL的地址
     if (retWSCWriteProviderOrder != ERROR_SUCCESS) {
         DbgPrint(false, "WSCWriteProviderOrder:%s", ErrorString{ retWSCWriteProviderOrder });
         FreeProvider(pProtoInfo);
-        return false;
+        return 0;
     }
 
     FreeProvider(pProtoInfo);
 
-    return true;
+    return dwLayeredCatalogId;
 }
 
 bool RemoveProvider(DWORD dwLayeredCatalogId)
@@ -448,8 +440,8 @@ int wmain(int argc, wchar_t* argv[])
 
 
     DbgPrint(true, "第二步：拷贝dll及其资源到安全目录：%s", DIR_SELECT);
-    if (!PathIsDirectory(DIR_SELECT)) {
-        if (!CreateDirectory(DIR_SELECT, NULL)) {
+    if (!PathIsDirectoryW(DIR_SELECT)) {
+        if (!CreateDirectoryW(DIR_SELECT, NULL)) {
             DbgPrint(false, "CreateDirectory:%s", ErrorString{});
             PAUSE_RETURN;
         }
@@ -457,9 +449,9 @@ int wmain(int argc, wchar_t* argv[])
 
     auto fnCopyFile = [](const wchar_t* file, const wchar_t* dstFilePath) {
         wchar_t srcFilePath[MAX_PATH];
-        GetModuleFileName(NULL, srcFilePath, MAX_PATH);
-        PathRemoveFileSpec(srcFilePath);
-        PathAppend(srcFilePath, file);
+        GetModuleFileNameW(NULL, srcFilePath, MAX_PATH);
+        PathRemoveFileSpecW(srcFilePath);
+        PathAppendW(srcFilePath, file);
 
         if (!CopyFile(srcFilePath, dstFilePath, FALSE)) {
             DbgPrint(false, "CopyFile失败[src:%s, dst:%s, msg:%s]", srcFilePath, dstFilePath, ErrorString{});
@@ -515,7 +507,8 @@ int wmain(int argc, wchar_t* argv[])
     }
     
     DbgPrint(true, "第三步：安装dll：%s", dstDllFile.c_str());
-    if (InstallProvider(dstDllFile.c_str())) {
+    DWORD dwLayeredCatalogId = InstallProvider(dstDllFile.c_str());
+    if (dwLayeredCatalogId != 0 && g_Env.set(KEY_ENTRYID, REG_DWORD, &dwLayeredCatalogId, sizeof(dwLayeredCatalogId))) {
         MessageBoxW(NULL, L"安装分层协议及其协议链成功", L"提示", MB_ICONINFORMATION);
     }
     else {

@@ -219,9 +219,13 @@ DWORD WINAPI ThreadFun(LPVOID lpThreadParameter)
 	if (lpThreadParameter) {
 		WaitForSingleObject(lpThreadParameter, INFINITE);
 		CloseHandle(lpThreadParameter);
-		if (lstrcmpW(g_szCurrentApp, L"sender") == 0) {
-			PrintDebugString(true, _T("%s关闭sender"), g_szCurrentApp);
-			ExitProcess(0);
+		if (lstrcmp(g_szCurrentApp, _T("sender")) == 0) {
+			TCHAR szDirectory[MAX_PATH];
+			GetCurrentDirectory(MAX_PATH, szDirectory);
+			if (lstrcmp(szDirectory, g_szDllDir) == 0){
+				PrintDebugString(true, _T("退出sender"));
+				ExitProcess(0);
+			}
 		}
 		PrintDebugString(true, _T("测试%s卸载lsp.dll"), g_szCurrentApp);
 

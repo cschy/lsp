@@ -155,7 +155,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    //先把窗口句柄存环境变量
    PrintDebugString(true, _T("检查自身窗口句柄：%x"), hWnd);
    TCHAR szHwnd[16];
-   _stprintf_s(szHwnd, _T("%x"), hWnd);
+   _stprintf_s(szHwnd, _T("%p"), hWnd);
    if (SetEnvironmentVariable(HWND_ENVKEY, szHwnd) == 0) {
        PrintDebugString(false, _T("sender窗口句柄写入环境变量失败：%s"), ErrWrap{}().c_str());
    }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Windows.h>
-#include <tchar.h>
 #include <string>
 
 void print(std::wstring_view str)
